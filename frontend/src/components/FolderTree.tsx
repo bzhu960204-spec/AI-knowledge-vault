@@ -1,0 +1,309 @@
+import { useMemo, useState } from 'react';
+import {
+  DndContext,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import type { FolderNode } from '../api/types';
+import {
+  useCreateFolder,
+  useDeleteFolder,
+  useFolders,
+  useUpdateFolder,
+} from '../hooks/useFolders';
+import { useTags } from '../hooks/useNotes';
+import { useSelectionStore } from '../store/useSelectionStore';
+import { buildFolderTree } from '../utils/tree';
+
+export function FolderTree() {
+  const { data: folders = [], isLoading } = useFolders();
+  const createFolder = useCreateFolder();
+  const updateFolder = useUpdateFolder();
+  const selectFolder = useSelectionStore((s) => s.selectFolder);
+  const selectedFolderId = useSelectionStore((s) => s.selectedFolderId);
+  const activeTag = useSelectionStore((s) => s.activeTag);
+
+  const tree = useMemo(() => buildFolderTree(folders), [folders]);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
+
+  function toggle(id: number) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const activeId = Number(event.active.id);
+    const overRaw = event.over?.id;
+    if (overRaw == null) return;
+    const newParentId = overRaw === 'root' ? null : Number(overRaw);
+    if (activeId === newParentId) return;
+
+    const folder = folders.find((f) => f.id === activeId);
+    if (!folder || folder.parentId === newParentId) return;
+
+    updateFolder.mutate({
+      id: activeId,
+      body: { name: folder.name, parentId: newParentId },
+    });
+  }
+
+  function addRootFolder() {
+    const name = window.prompt('New folder name');
+    if (name?.trim()) {
+      createFolder.mutate({ name: name.trim(), parentId: null });
+    }
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-center justify-between px-3 py-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+          Folders
+        </span>
+        <button
+          type="button"
+          onClick={addRootFolder}
+          title="New folder"
+          className="rounded-md px-1.5 text-lg leading-none text-muted transition hover:bg-surface-2 hover:text-accent"
+        >
+          +
+        </button>
+      </div>
+
+      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+        <div className="flex-1 overflow-y-auto px-2 pb-3">
+          <RootDropZone
+            active={selectedFolderId === null && activeTag === null}
+            onSelect={() => selectFolder(null)}
+          />
+          {isLoading ? (
+            <p className="px-2 py-2 text-sm text-muted">Loading…</p>
+          ) : tree.length === 0 ? (
+            <p className="px-2 py-2 text-sm text-muted">
+              No folders yet. Click + to create one.
+            </p>
+          ) : (
+            tree.map((node) => (
+              <FolderRow
+                key={node.id}
+                node={node}
+                depth={0}
+                expanded={expanded}
+                onToggle={toggle}
+              />
+            ))
+          )}
+        </div>
+      </DndContext>
+
+      <TagFilterHint activeTag={activeTag} onClear={() => selectFolder(null)} />
+      {activeTag == null && <TagSection />}
+    </div>
+  );
+}
+
+function RootDropZone({
+  active,
+  onSelect,
+}: {
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: 'root' });
+  return (
+    <button
+      type="button"
+      ref={setNodeRef}
+      onClick={onSelect}
+      className={`mb-1 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition ${
+        active ? 'bg-surface-2 text-accent' : 'text-text hover:bg-surface-2'
+      } ${isOver ? 'ring-1 ring-accent' : ''}`}
+    >
+      <span>🏠</span>
+      <span>All Notes (root)</span>
+    </button>
+  );
+}
+
+interface FolderRowProps {
+  node: FolderNode;
+  depth: number;
+  expanded: Set<number>;
+  onToggle: (id: number) => void;
+}
+
+function FolderRow({ node, depth, expanded, onToggle }: FolderRowProps) {
+  const selectFolder = useSelectionStore((s) => s.selectFolder);
+  const selectedFolderId = useSelectionStore((s) => s.selectedFolderId);
+  const createFolder = useCreateFolder();
+  const updateFolder = useUpdateFolder();
+  const deleteFolder = useDeleteFolder();
+
+  const isOpen = expanded.has(node.id);
+  const hasChildren = node.children.length > 0;
+  const isSelected = selectedFolderId === node.id;
+
+  const {
+    setNodeRef: setDragRef,
+    listeners,
+    attributes,
+    isDragging,
+  } = useDraggable({ id: node.id });
+  const { setNodeRef: setDropRef, isOver } = useDroppable({ id: node.id });
+
+  function addChild() {
+    const name = window.prompt(`New folder inside "${node.name}"`);
+    if (name?.trim()) {
+      createFolder.mutate({ name: name.trim(), parentId: node.id });
+      if (!isOpen) onToggle(node.id);
+    }
+  }
+
+  function rename() {
+    const name = window.prompt('Rename folder', node.name);
+    if (name?.trim() && name.trim() !== node.name) {
+      updateFolder.mutate({
+        id: node.id,
+        body: { name: name.trim(), parentId: node.parentId },
+      });
+    }
+  }
+
+  function remove() {
+    if (
+      window.confirm(
+        `Delete "${node.name}" and its subfolders? Notes inside move to root.`,
+      )
+    ) {
+      deleteFolder.mutate(node.id);
+    }
+  }
+
+  return (
+    <div>
+      <div
+        ref={setDropRef}
+        className={`group flex items-center gap-1 rounded-lg pr-1 transition ${
+          isSelected ? 'bg-surface-2' : 'hover:bg-surface-2'
+        } ${isOver ? 'ring-1 ring-accent' : ''} ${
+          isDragging ? 'opacity-50' : ''
+        }`}
+        style={{ paddingLeft: `${depth * 14}px` }}
+      >
+        <button
+          type="button"
+          onClick={() => hasChildren && onToggle(node.id)}
+          className="w-5 shrink-0 text-xs text-muted"
+        >
+          {hasChildren ? (isOpen ? '▾' : '▸') : ''}
+        </button>
+
+        <button
+          type="button"
+          ref={setDragRef}
+          {...listeners}
+          {...attributes}
+          onClick={() => selectFolder(node.id)}
+          className={`flex flex-1 items-center gap-1.5 py-1.5 text-left text-sm ${
+            isSelected ? 'text-accent' : 'text-text'
+          }`}
+        >
+          <span>📁</span>
+          <span className="truncate">{node.name}</span>
+        </button>
+
+        <div className="flex items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
+          <IconButton title="New subfolder" onClick={addChild} label="+" />
+          <IconButton title="Rename" onClick={rename} label="✎" />
+          <IconButton title="Delete" onClick={remove} label="🗑" />
+        </div>
+      </div>
+
+      {isOpen &&
+        node.children.map((child) => (
+          <FolderRow
+            key={child.id}
+            node={child}
+            depth={depth + 1}
+            expanded={expanded}
+            onToggle={onToggle}
+          />
+        ))}
+    </div>
+  );
+}
+
+function IconButton({
+  title,
+  onClick,
+  label,
+}: {
+  title: string;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className="rounded px-1 text-xs text-muted transition hover:bg-surface hover:text-accent"
+    >
+      {label}
+    </button>
+  );
+}
+
+function TagFilterHint({
+  activeTag,
+  onClear,
+}: {
+  activeTag: string | null;
+  onClear: () => void;
+}) {
+  if (!activeTag) return null;
+  return (
+    <div className="mx-2 mb-2 flex items-center justify-between rounded-lg bg-surface-2 px-2 py-1.5 text-sm">
+      <span className="text-accent">#{activeTag}</span>
+      <button type="button" onClick={onClear} className="text-muted hover:text-text">
+        clear
+      </button>
+    </div>
+  );
+}
+
+function TagSection() {
+  const selectTag = useSelectionStore((s) => s.selectTag);
+  const { data: tags = [] } = useTags();
+  if (tags.length === 0) return null;
+  return (
+    <div className="border-t border-border px-3 py-3">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+        Tags
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {tags.map((tag) => (
+          <button
+            key={tag}
+            type="button"
+            onClick={() => selectTag(tag)}
+            className="rounded-md border border-border px-2 py-0.5 text-xs text-muted transition hover:border-accent hover:text-accent"
+          >
+            #{tag}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}

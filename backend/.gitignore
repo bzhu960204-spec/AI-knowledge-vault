@@ -1,0 +1,24 @@
+# Maven build output
+target/
+
+# Logs
+*.log
+logs/
+
+# Data directory (H2 db + attachments; mapped to OneDrive junction — never commit)
+data/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

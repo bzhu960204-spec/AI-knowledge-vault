@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en" data-theme="light" data-accent="indigo">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Answer Vault</title>
+    <script>
+      // Apply persisted theme before paint to avoid a flash of the wrong theme.
+      try {
+        var saved = JSON.parse(localStorage.getItem('ai-vault-theme') || '{}');
+        var s = saved && saved.state ? saved.state : {};
+        document.documentElement.setAttribute('data-theme', s.theme || 'light');
+        document.documentElement.setAttribute('data-accent', s.accent || 'indigo');
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

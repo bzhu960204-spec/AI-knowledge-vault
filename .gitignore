@@ -1,0 +1,29 @@
+# ── Environment & secrets ──────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Backend ─────────────────────────────────────────────────────
+backend/target/
+backend/data/
+
+# ── Frontend ────────────────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/*.local
+
+# ── IDE ─────────────────────────────────────────────────────────
+.idea/
+*.iml
+.vscode/
+!.vscode/extensions.json
+
+# ── OS ──────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Logs ────────────────────────────────────────────────────────
+*.log
+logs/

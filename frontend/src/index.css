@@ -1,0 +1,177 @@
+@import 'tailwindcss';
+
+/* ============================================================
+   Theme token system
+   - Theme selected via  [data-theme]  on <html>
+   - Accent selected via [data-accent] on <html>
+   Every visual surface reads from these CSS variables so the
+   whole UI (including the Milkdown editor) re-themes at runtime.
+   ============================================================ */
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-contrast: var(--accent-contrast);
+  --color-code-bg: var(--code-bg);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+:root {
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, 'SFMono-Regular', monospace;
+
+  /* Accent palette (default: indigo) */
+  --accent: #6366f1;
+  --accent-contrast: #ffffff;
+}
+
+/* ---------- Accent variants ---------- */
+[data-accent='indigo'] {
+  --accent: #6366f1;
+  --accent-contrast: #ffffff;
+}
+[data-accent='emerald'] {
+  --accent: #10b981;
+  --accent-contrast: #ffffff;
+}
+[data-accent='violet'] {
+  --accent: #8b5cf6;
+  --accent-contrast: #ffffff;
+}
+[data-accent='rose'] {
+  --accent: #f43f5e;
+  --accent-contrast: #ffffff;
+}
+[data-accent='amber'] {
+  --accent: #f59e0b;
+  --accent-contrast: #1a1305;
+}
+
+/* ---------- Theme 1: Light Minimal (Notion-like) ---------- */
+[data-theme='light'] {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f7f7f5;
+  --border: #eae9e5;
+  --text: #37352f;
+  --muted: #8a887d;
+  --code-bg: #f6f6f4;
+  color-scheme: light;
+}
+
+/* ---------- Theme 2: Dark Developer ---------- */
+[data-theme='dark'] {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-2: #1c2330;
+  --border: #2a3140;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --code-bg: #0b0f16;
+  color-scheme: dark;
+}
+
+/* ---------- Theme 3: Modern Dashboard ---------- */
+[data-theme='dashboard'] {
+  --bg: #f1f5f9;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --border: #e2e8f0;
+  --text: #1e293b;
+  --muted: #64748b;
+  --code-bg: #f1f5f9;
+  color-scheme: light;
+}
+
+/* ---------- Theme 4: Sepia / Reading ---------- */
+[data-theme='sepia'] {
+  --bg: #f4ecd8;
+  --surface: #faf3e0;
+  --surface-2: #efe6cc;
+  --border: #e0d3ac;
+  --text: #4a3f2f;
+  --muted: #8a7a5c;
+  --code-bg: #ece0c4;
+  color-scheme: light;
+}
+
+/* ---------- Theme 5: High Contrast (accessible) ---------- */
+[data-theme='contrast'] {
+  --bg: #000000;
+  --surface: #0a0a0a;
+  --surface-2: #141414;
+  --border: #ffffff;
+  --text: #ffffff;
+  --muted: #cccccc;
+  --code-bg: #101010;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Thin, theme-aware scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ============================================================
+   Milkdown editor theming — map its surfaces to our tokens
+   ============================================================ */
+.milkdown {
+  background: var(--surface);
+  color: var(--text);
+}
+.milkdown .ProseMirror {
+  padding: 1.25rem 0;
+  outline: none;
+  min-height: 320px;
+  line-height: 1.7;
+}
+.milkdown .ProseMirror pre,
+.milkdown code {
+  background: var(--code-bg) !important;
+  color: var(--text);
+  font-family: var(--font-mono);
+}
+.milkdown .ProseMirror pre {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+.milkdown a {
+  color: var(--accent);
+}
+.milkdown blockquote {
+  border-left: 3px solid var(--accent);
+  color: var(--muted);
+}
