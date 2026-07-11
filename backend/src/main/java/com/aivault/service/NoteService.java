@@ -32,16 +32,38 @@ public class NoteService {
     }
 
     @Transactional(readOnly = true)
-    public List<NoteSummaryDto> list(Long folderId, String tag) {
+    public List<NoteSummaryDto> list(Long folderId, String tag, boolean includeSubfolders) {
         List<Note> notes;
         if (tag != null && !tag.isBlank()) {
             notes = noteRepository.findByTagName(tag.trim());
         } else if (folderId != null) {
-            notes = noteRepository.findByFolderIdOrderByUpdatedAtDesc(folderId);
+            if (includeSubfolders) {
+                List<Long> folderIds = collectFolderAndDescendants(folderId);
+                notes = noteRepository.findByFolderIdInOrderByFolderIdAscSortOrderAscCreatedAtDesc(folderIds);
+            } else {
+                notes = noteRepository.findByFolderIdOrderBySortOrderAscCreatedAtDesc(folderId);
+            }
         } else {
-            notes = noteRepository.findByFolderIdIsNullOrderByUpdatedAtDesc();
+            if (includeSubfolders) {
+                notes = noteRepository.findAllByOrderByFolderIdAscSortOrderAscCreatedAtDesc();
+            } else {
+                notes = noteRepository.findByFolderIdIsNullOrderBySortOrderAscCreatedAtDesc();
+            }
         }
         return notes.stream().map(this::toSummary).toList();
+    }
+
+    private List<Long> collectFolderAndDescendants(Long rootId) {
+        List<Long> result = new java.util.ArrayList<>();
+        java.util.Deque<Long> queue = new java.util.ArrayDeque<>();
+        queue.add(rootId);
+        while (!queue.isEmpty()) {
+            Long current = queue.poll();
+            result.add(current);
+            folderRepository.findByParentIdOrderBySortOrderAscNameAsc(current)
+                    .forEach(child -> queue.add(child.getId()));
+        }
+        return result;
     }
 
     @Transactional(readOnly = true)
@@ -68,13 +90,51 @@ public class NoteService {
     public NoteDto update(Long id, NoteRequest request) {
         Note note = findNote(id);
         applyRequest(note, request);
+        Note saved = noteRepository.saveAndFlush(note);
+        cleanupOrphanTags();
+        return toDto(saved);
+    }
+
+    @Transactional
+    public NoteDto move(Long id, Long folderId) {
+        Note note = findNote(id);
+        note.setFolderId(resolveFolder(folderId));
         return toDto(noteRepository.save(note));
+    }
+
+    @Transactional
+    public void reorder(List<Long> orderedIds) {
+        if (orderedIds == null || orderedIds.isEmpty()) {
+            return;
+        }
+        List<Note> notes = noteRepository.findAllById(orderedIds);
+        java.util.Map<Long, Note> byId = new java.util.HashMap<>();
+        for (Note note : notes) {
+            byId.put(note.getId(), note);
+        }
+        int index = 0;
+        for (Long id : orderedIds) {
+            Note note = byId.get(id);
+            if (note != null) {
+                note.setSortOrder(index++);
+            }
+        }
+        noteRepository.saveAll(byId.values());
     }
 
     @Transactional
     public void delete(Long id) {
         Note note = findNote(id);
         noteRepository.delete(note);
+        noteRepository.flush();
+        cleanupOrphanTags();
+    }
+
+    private void cleanupOrphanTags() {
+        List<Tag> orphans = tagRepository.findOrphans();
+        if (!orphans.isEmpty()) {
+            tagRepository.deleteAll(orphans);
+        }
     }
 
     private Note findNote(Long id) {
@@ -84,6 +144,7 @@ public class NoteService {
 
     private void applyRequest(Note note, NoteRequest request) {
         note.setTitle(request.title() == null || request.title().isBlank() ? "Untitled" : request.title().trim());
+        note.setQuestion(request.question());
         note.setContentMarkdown(request.contentMarkdown() != null ? request.contentMarkdown() : "");
         note.setSourceModel(request.sourceModel());
         note.setFolderId(resolveFolder(request.folderId()));
@@ -121,6 +182,7 @@ public class NoteService {
         return new NoteDto(
                 note.getId(),
                 note.getTitle(),
+                note.getQuestion(),
                 note.getContentMarkdown(),
                 note.getFolderId(),
                 note.getSourceModel(),
@@ -138,7 +200,8 @@ public class NoteService {
                 note.getSourceModel(),
                 note.getTags().stream().map(Tag::getName).toList(),
                 buildExcerpt(note.getContentMarkdown()),
-                note.getUpdatedAt()
+                note.getUpdatedAt(),
+                note.getSortOrder()
         );
     }
 

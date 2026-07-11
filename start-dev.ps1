@@ -54,6 +54,36 @@ $frontendDir = Join-Path $scriptRoot 'frontend'
 if (-not (Test-Path $backendDir))  { throw "Backend directory not found: $backendDir" }
 if (-not (Test-Path $frontendDir)) { throw "Frontend directory not found: $frontendDir" }
 
+# --- Ensure frontend dependencies are installed (first run) ---
+# The frontend is started with `npx vite`, which assumes node_modules already
+# exists. On a fresh clone it doesn't, so install dependencies automatically.
+$nodeModulesDir = Join-Path $frontendDir 'node_modules'
+$needInstall = -not (Test-Path $nodeModulesDir)
+if (-not $needInstall) {
+  # Re-install if package.json changed after the last install.
+  $pkgJson = Join-Path $frontendDir 'package.json'
+  if (Test-Path $pkgJson) {
+    $pkg = Get-Item $pkgJson
+    $mod = Get-Item $nodeModulesDir
+    if ($pkg.LastWriteTime -gt $mod.LastWriteTime) { $needInstall = $true }
+  }
+}
+
+if ($needInstall) {
+  Write-Host "Frontend dependencies missing or outdated. Running 'npm install'..." -ForegroundColor Yellow
+  Push-Location $frontendDir
+  try {
+    & npm install
+    if ($LASTEXITCODE -ne 0) { throw "npm install failed with exit code $LASTEXITCODE" }
+    Write-Host "npm install completed." -ForegroundColor Green
+  }
+  finally {
+    Pop-Location
+  }
+} else {
+  Write-Host "Frontend dependencies already installed. Skipping npm install." -ForegroundColor DarkGray
+}
+
 if ($StopExisting) {
   Stop-ListeningProcessByPort -Port $BackendPort
   Stop-ListeningProcessByPort -Port $FrontendPort

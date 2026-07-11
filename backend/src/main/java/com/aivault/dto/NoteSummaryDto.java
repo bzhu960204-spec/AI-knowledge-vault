@@ -10,6 +10,7 @@ public record NoteSummaryDto(
         String sourceModel,
         List<String> tags,
         String excerpt,
-        Instant updatedAt
+        Instant updatedAt,
+        int sortOrder
 ) {
 }

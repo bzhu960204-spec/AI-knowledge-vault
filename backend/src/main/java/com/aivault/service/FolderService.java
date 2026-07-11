@@ -62,7 +62,7 @@ public class FolderService {
         // Collect the folder and all descendants, then detach notes and remove folders.
         List<Long> idsToDelete = collectSubtreeIds(folder.getId());
         for (Long folderId : idsToDelete) {
-            List<Note> notes = noteRepository.findByFolderIdOrderByUpdatedAtDesc(folderId);
+            List<Note> notes = noteRepository.findByFolderIdOrderBySortOrderAscCreatedAtDesc(folderId);
             for (Note note : notes) {
                 note.setFolderId(null);
             }

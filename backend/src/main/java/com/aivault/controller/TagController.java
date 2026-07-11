@@ -21,7 +21,7 @@ public class TagController {
 
     @GetMapping
     public List<String> list() {
-        return tagRepository.findAll().stream()
+        return tagRepository.findAllInUse().stream()
                 .map(Tag::getName)
                 .sorted(Comparator.comparing(String::toLowerCase))
                 .toList();

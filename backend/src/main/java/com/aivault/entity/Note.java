@@ -13,6 +13,7 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 
+import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -35,6 +36,11 @@ public class Note {
     @Column(name = "content_markdown")
     private String contentMarkdown = "";
 
+    /** The question this answer responds to. Optional. */
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
+    @Column(name = "question")
+    private String question;
+
     /** Null means the note lives at the root level (no folder). */
     @Column(name = "folder_id")
     private Long folderId;
@@ -42,6 +48,11 @@ public class Note {
     /** Origin model of the answer, e.g. GPT-4, Claude, Gemini. */
     @Column(name = "source_model")
     private String sourceModel;
+
+    /** Manual position within its folder; lower comes first. */
+    @Column(name = "sort_order", nullable = false)
+    @ColumnDefault("0")
+    private int sortOrder = 0;
 
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
@@ -93,6 +104,14 @@ public class Note {
         this.contentMarkdown = contentMarkdown;
     }
 
+    public String getQuestion() {
+        return question;
+    }
+
+    public void setQuestion(String question) {
+        this.question = question;
+    }
+
     public Long getFolderId() {
         return folderId;
     }
@@ -107,6 +126,14 @@ public class Note {
 
     public void setSourceModel(String sourceModel) {
         this.sourceModel = sourceModel;
+    }
+
+    public int getSortOrder() {
+        return sortOrder;
+    }
+
+    public void setSortOrder(int sortOrder) {
+        this.sortOrder = sortOrder;
     }
 
     public Set<Tag> getTags() {

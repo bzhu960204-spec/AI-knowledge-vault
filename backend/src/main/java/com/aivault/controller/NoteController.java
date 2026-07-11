@@ -1,14 +1,17 @@
 package com.aivault.controller;
 
+import com.aivault.dto.MoveNoteRequest;
 import com.aivault.dto.NoteDto;
 import com.aivault.dto.NoteRequest;
 import com.aivault.dto.NoteSummaryDto;
+import com.aivault.dto.ReorderNotesRequest;
 import com.aivault.service.NoteService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -33,9 +36,10 @@ public class NoteController {
     @GetMapping
     public List<NoteSummaryDto> list(
             @RequestParam(required = false) Long folderId,
-            @RequestParam(required = false) String tag
+            @RequestParam(required = false) String tag,
+            @RequestParam(required = false, defaultValue = "false") boolean includeSubfolders
     ) {
-        return noteService.list(folderId, tag);
+        return noteService.list(folderId, tag, includeSubfolders);
     }
 
     @GetMapping("/search")
@@ -57,6 +61,17 @@ public class NoteController {
     @PutMapping("/{id}")
     public NoteDto update(@PathVariable Long id, @Valid @RequestBody NoteRequest request) {
         return noteService.update(id, request);
+    }
+
+    @PatchMapping("/{id}/folder")
+    public NoteDto move(@PathVariable Long id, @RequestBody MoveNoteRequest request) {
+        return noteService.move(id, request.folderId());
+    }
+
+    @PatchMapping("/reorder")
+    public ResponseEntity<Void> reorder(@RequestBody ReorderNotesRequest request) {
+        noteService.reorder(request.ids());
+        return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/{id}")
