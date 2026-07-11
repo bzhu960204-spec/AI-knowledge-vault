@@ -1,12 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
-  DndContext,
-  PointerSensor,
   useDraggable,
   useDroppable,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
 } from '@dnd-kit/core';
 import type { FolderNode } from '../api/types';
 import {
@@ -19,10 +14,13 @@ import { useTags } from '../hooks/useNotes';
 import { useSelectionStore } from '../store/useSelectionStore';
 import { buildFolderTree } from '../utils/tree';
 
-export function FolderTree() {
+export function FolderTree({
+  onToggleCollapse,
+}: {
+  onToggleCollapse?: () => void;
+}) {
   const { data: folders = [], isLoading } = useFolders();
   const createFolder = useCreateFolder();
-  const updateFolder = useUpdateFolder();
   const selectFolder = useSelectionStore((s) => s.selectFolder);
   const selectedFolderId = useSelectionStore((s) => s.selectedFolderId);
   const activeTag = useSelectionStore((s) => s.activeTag);
@@ -30,31 +28,11 @@ export function FolderTree() {
   const tree = useMemo(() => buildFolderTree(folders), [folders]);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-  );
-
   function toggle(id: number) {
     setExpanded((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
-    });
-  }
-
-  function handleDragEnd(event: DragEndEvent) {
-    const activeId = Number(event.active.id);
-    const overRaw = event.over?.id;
-    if (overRaw == null) return;
-    const newParentId = overRaw === 'root' ? null : Number(overRaw);
-    if (activeId === newParentId) return;
-
-    const folder = folders.find((f) => f.id === activeId);
-    if (!folder || folder.parentId === newParentId) return;
-
-    updateFolder.mutate({
-      id: activeId,
-      body: { name: folder.name, parentId: newParentId },
     });
   }
 
@@ -71,41 +49,51 @@ export function FolderTree() {
         <span className="text-xs font-semibold uppercase tracking-wide text-muted">
           Folders
         </span>
-        <button
-          type="button"
-          onClick={addRootFolder}
-          title="New folder"
-          className="rounded-md px-1.5 text-lg leading-none text-muted transition hover:bg-surface-2 hover:text-accent"
-        >
-          +
-        </button>
-      </div>
-
-      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-        <div className="flex-1 overflow-y-auto px-2 pb-3">
-          <RootDropZone
-            active={selectedFolderId === null && activeTag === null}
-            onSelect={() => selectFolder(null)}
-          />
-          {isLoading ? (
-            <p className="px-2 py-2 text-sm text-muted">Loading…</p>
-          ) : tree.length === 0 ? (
-            <p className="px-2 py-2 text-sm text-muted">
-              No folders yet. Click + to create one.
-            </p>
-          ) : (
-            tree.map((node) => (
-              <FolderRow
-                key={node.id}
-                node={node}
-                depth={0}
-                expanded={expanded}
-                onToggle={toggle}
-              />
-            ))
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={addRootFolder}
+            title="New folder"
+            className="rounded-md px-1.5 text-lg leading-none text-muted transition hover:bg-surface-2 hover:text-accent"
+          >
+            +
+          </button>
+          {onToggleCollapse && (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              title="Hide folders"
+              className="rounded-md px-1.5 py-1 text-muted transition hover:bg-surface-2 hover:text-accent"
+            >
+              ◂
+            </button>
           )}
         </div>
-      </DndContext>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-2 pb-3">
+        <RootDropZone
+          active={selectedFolderId === null && activeTag === null}
+          onSelect={() => selectFolder(null)}
+        />
+        {isLoading ? (
+          <p className="px-2 py-2 text-sm text-muted">Loading…</p>
+        ) : tree.length === 0 ? (
+          <p className="px-2 py-2 text-sm text-muted">
+            No folders yet. Click + to create one.
+          </p>
+        ) : (
+          tree.map((node) => (
+            <FolderRow
+              key={node.id}
+              node={node}
+              depth={0}
+              expanded={expanded}
+              onToggle={toggle}
+            />
+          ))
+        )}
+      </div>
 
       <TagFilterHint activeTag={activeTag} onClear={() => selectFolder(null)} />
       {activeTag == null && <TagSection />}
@@ -159,8 +147,13 @@ function FolderRow({ node, depth, expanded, onToggle }: FolderRowProps) {
     listeners,
     attributes,
     isDragging,
-  } = useDraggable({ id: node.id });
-  const { setNodeRef: setDropRef, isOver } = useDroppable({ id: node.id });
+  } = useDraggable({
+    id: `folder:${node.id}`,
+    data: { type: 'folder', name: node.name, parentId: node.parentId },
+  });
+  const { setNodeRef: setDropRef, isOver } = useDroppable({
+    id: `folder:${node.id}`,
+  });
 
   function addChild() {
     const name = window.prompt(`New folder inside "${node.name}"`);
@@ -194,7 +187,7 @@ function FolderRow({ node, depth, expanded, onToggle }: FolderRowProps) {
     <div>
       <div
         ref={setDropRef}
-        className={`group flex items-center gap-1 rounded-lg pr-1 transition ${
+        className={`group relative flex items-center gap-1 rounded-lg pr-1 transition ${
           isSelected ? 'bg-surface-2' : 'hover:bg-surface-2'
         } ${isOver ? 'ring-1 ring-accent' : ''} ${
           isDragging ? 'opacity-50' : ''
@@ -215,15 +208,16 @@ function FolderRow({ node, depth, expanded, onToggle }: FolderRowProps) {
           {...listeners}
           {...attributes}
           onClick={() => selectFolder(node.id)}
-          className={`flex flex-1 items-center gap-1.5 py-1.5 text-left text-sm ${
+          title={node.name}
+          className={`flex min-w-0 flex-1 items-center gap-1.5 py-1.5 text-left text-sm ${
             isSelected ? 'text-accent' : 'text-text'
           }`}
         >
-          <span>📁</span>
+          <span className="shrink-0">📁</span>
           <span className="truncate">{node.name}</span>
         </button>
 
-        <div className="flex items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
+        <div className="pointer-events-none absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-surface-2 px-0.5 opacity-0 shadow-sm transition group-hover:pointer-events-auto group-hover:opacity-100">
           <IconButton title="New subfolder" onClick={addChild} label="+" />
           <IconButton title="Rename" onClick={rename} label="✎" />
           <IconButton title="Delete" onClick={remove} label="🗑" />

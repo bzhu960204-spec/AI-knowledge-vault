@@ -4,9 +4,9 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { notesApi, tagsApi } from '../api/endpoints';
-import type { NoteRequest } from '../api/types';
+import type { NoteRequest, NoteSummary } from '../api/types';
 
-export function useNotes(params: { folderId?: number | null; tag?: string }) {
+export function useNotes(params: { folderId?: number | null; tag?: string; includeSubfolders?: boolean }) {
   return useQuery({
     queryKey: ['notes', params],
     queryFn: () => notesApi.list(params),
@@ -57,7 +57,56 @@ export function useDeleteNote() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => notesApi.remove(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['notes'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['notes'] });
+      qc.invalidateQueries({ queryKey: ['tags'] });
+    },
+  });
+}
+
+export function useMoveNote() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      folderId,
+    }: {
+      id: number;
+      folderId: number | null;
+    }) => notesApi.move(id, folderId),
+    onSuccess: (note) => {
+      qc.invalidateQueries({ queryKey: ['notes'] });
+      qc.invalidateQueries({ queryKey: ['note', note.id] });
+    },
+  });
+}
+
+export function useReorderNotes(params: {
+  folderId?: number | null;
+  tag?: string;
+}) {
+  const qc = useQueryClient();
+  const key = ['notes', params];
+  return useMutation({
+    mutationFn: (orderedIds: number[]) => notesApi.reorder(orderedIds),
+    onMutate: async (orderedIds) => {
+      await qc.cancelQueries({ queryKey: key });
+      const prev = qc.getQueryData<NoteSummary[]>(key);
+      if (prev) {
+        const byId = new Map(prev.map((n) => [n.id, n]));
+        const next = orderedIds
+          .map((id) => byId.get(id))
+          .filter((n): n is NoteSummary => n != null);
+        qc.setQueryData(key, next);
+      }
+      return { prev };
+    },
+    onError: (_err, _ids, ctx) => {
+      if (ctx?.prev) qc.setQueryData(key, ctx.prev);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['notes'] });
+    },
   });
 }
 

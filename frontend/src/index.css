@@ -148,6 +148,32 @@ body {
 /* ============================================================
    Milkdown editor theming — map its surfaces to our tokens
    ============================================================ */
+
+/* Crepe ships a `frame` theme that hard-codes its own light palette via a set
+   of `--crepe-color-*` variables on `.milkdown`. Remap them to our theme
+   tokens so the editing surface follows [data-theme] instead of staying white.
+   The `[data-theme]` prefix raises specificity above Crepe's own `.milkdown`
+   rule, so these win regardless of stylesheet import order. */
+[data-theme] .milkdown {
+  --crepe-color-background: var(--surface);
+  --crepe-color-on-background: var(--text);
+  --crepe-color-surface: var(--surface);
+  --crepe-color-surface-low: var(--surface-2);
+  --crepe-color-on-surface: var(--text);
+  --crepe-color-on-surface-variant: var(--muted);
+  --crepe-color-outline: var(--border);
+  --crepe-color-primary: var(--accent);
+  --crepe-color-secondary: var(--surface-2);
+  --crepe-color-on-secondary: var(--text);
+  --crepe-color-inverse: var(--text);
+  --crepe-color-on-inverse: var(--bg);
+  --crepe-color-inline-code: var(--accent);
+  --crepe-color-inline-area: var(--code-bg);
+  --crepe-color-hover: var(--surface-2);
+  --crepe-color-selected: color-mix(in srgb, var(--accent) 22%, transparent);
+  --crepe-color-error: #f43f5e;
+}
+
 .milkdown {
   background: var(--surface);
   color: var(--text);

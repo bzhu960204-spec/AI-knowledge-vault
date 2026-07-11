@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Local npm config (e.g. mirror registry) — keep it off the repo
+.npmrc
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

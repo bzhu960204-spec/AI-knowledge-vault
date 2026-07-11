@@ -17,12 +17,13 @@ export const foldersApi = {
 };
 
 export const notesApi = {
-  list: (params: { folderId?: number | null; tag?: string }) =>
+  list: (params: { folderId?: number | null; tag?: string; includeSubfolders?: boolean }) =>
     api
       .get<NoteSummary[]>('/notes', {
         params: {
           folderId: params.folderId ?? undefined,
           tag: params.tag ?? undefined,
+          includeSubfolders: params.includeSubfolders ? true : undefined,
         },
       })
       .then((r) => r.data),
@@ -35,6 +36,10 @@ export const notesApi = {
     api.post<Note>('/notes', body).then((r) => r.data),
   update: (id: number, body: NoteRequest) =>
     api.put<Note>(`/notes/${id}`, body).then((r) => r.data),
+  move: (id: number, folderId: number | null) =>
+    api.patch<Note>(`/notes/${id}/folder`, { folderId }).then((r) => r.data),
+  reorder: (ids: number[]) =>
+    api.patch('/notes/reorder', { ids }).then(() => undefined),
   remove: (id: number) => api.delete(`/notes/${id}`).then(() => undefined),
 };
 

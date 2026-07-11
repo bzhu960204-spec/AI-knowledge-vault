@@ -21,11 +21,13 @@ export interface NoteSummary {
   tags: string[];
   excerpt: string;
   updatedAt: string;
+  sortOrder: number;
 }
 
 export interface Note {
   id: number;
   title: string;
+  question: string | null;
   contentMarkdown: string;
   folderId: number | null;
   sourceModel: string | null;
@@ -36,6 +38,7 @@ export interface Note {
 
 export interface NoteRequest {
   title: string;
+  question?: string | null;
   contentMarkdown: string;
   folderId?: number | null;
   sourceModel?: string | null;
