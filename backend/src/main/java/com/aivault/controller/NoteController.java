@@ -1,13 +1,16 @@
 package com.aivault.controller;
 
+import com.aivault.dto.ExportRequest;
 import com.aivault.dto.MoveNoteRequest;
 import com.aivault.dto.NoteDto;
 import com.aivault.dto.NoteRequest;
 import com.aivault.dto.NoteSummaryDto;
 import com.aivault.dto.ReorderNotesRequest;
+import com.aivault.service.ExportService;
 import com.aivault.service.NoteService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,9 +31,11 @@ import java.util.List;
 public class NoteController {
 
     private final NoteService noteService;
+    private final ExportService exportService;
 
-    public NoteController(NoteService noteService) {
+    public NoteController(NoteService noteService, ExportService exportService) {
         this.noteService = noteService;
+        this.exportService = exportService;
     }
 
     @GetMapping
@@ -78,5 +83,13 @@ public class NoteController {
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         noteService.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping(value = "/export", produces = MediaType.TEXT_HTML_VALUE)
+    public ResponseEntity<String> export(@RequestBody ExportRequest request) {
+        String html = exportService.exportHtml(request);
+        return ResponseEntity.ok()
+                .contentType(MediaType.TEXT_HTML)
+                .body(html);
     }
 }
