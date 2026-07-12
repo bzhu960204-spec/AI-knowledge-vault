@@ -132,6 +132,47 @@ body {
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
+/* Single-line native inputs (title, tags, search) keep the native caret but
+   in the theme's high-contrast foreground color. */
+input,
+textarea {
+  caret-color: var(--text);
+}
+
+/* Main editor: the native caret is only 1px wide and stays hard to spot in
+   every theme. Hide it and draw a thicker blinking bar instead (see the
+   `.thick-caret` widget rendered by MilkdownEditor). CodeMirror code blocks
+   draw their own cursor via `drawSelection`, so keeping their caret hidden is
+   correct. */
+.milkdown .ProseMirror,
+.milkdown .cm-content {
+  caret-color: transparent;
+}
+
+.milkdown .ProseMirror .thick-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.25em;
+  margin: 0 -1px;
+  vertical-align: text-bottom;
+  background: var(--text);
+  border-radius: 1px;
+  pointer-events: none;
+  user-select: none;
+  animation: thick-caret-blink 1.1s steps(1, end) infinite;
+}
+
+@keyframes thick-caret-blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  50.01%,
+  100% {
+    opacity: 0;
+  }
+}
+
 /* Thin, theme-aware scrollbars */
 ::-webkit-scrollbar {
   width: 10px;

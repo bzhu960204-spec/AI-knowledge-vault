@@ -1,8 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { Crepe } from '@milkdown/crepe';
-import { editorViewOptionsCtx, parserCtx } from '@milkdown/kit/core';
+import { editorViewOptionsCtx, parserCtx, prosePluginsCtx } from '@milkdown/kit/core';
 import { codeBlockConfig } from '@milkdown/kit/component/code-block';
+import { blockConfig } from '@milkdown/kit/plugin/block';
 import { Slice } from '@milkdown/kit/prose/model';
+import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
+import { Decoration, DecorationSet } from '@milkdown/kit/prose/view';
 import type { Ctx } from '@milkdown/kit/ctx';
 import '@milkdown/crepe/theme/common/style.css';
 import '@milkdown/crepe/theme/frame.css';
@@ -80,6 +83,84 @@ function preferRenderedMath(ctx: Ctx): void {
   }));
 }
 
+/**
+ * Keep the block-edit handle (the "+" / drag buttons) in the left gutter.
+ *
+ * Crepe anchors that handle to the node under the editor's horizontal center.
+ * Its default `filterNodes` only rejects *ancestor* table/blockquote/math_inline
+ * nodes via `findParent`, but an inline formula (`math_inline`) is an atom leaf —
+ * it's the node AT the hovered position, never an ancestor — so it's never
+ * rejected. When the center line falls on an inline formula the handle latches
+ * onto the KaTeX span and renders in the middle of the paragraph, over the text.
+ * Reject any inline node so the handle walks up to the enclosing block.
+ */
+function keepBlockHandleInGutter(ctx: Ctx): void {
+  ctx.update(blockConfig.key, (prev) => ({
+    ...prev,
+    filterNodes: (pos, node) => {
+      if (node?.isInline) return false;
+      return prev.filterNodes ? prev.filterNodes(pos, node) : true;
+    },
+  }));
+}
+
+const thickCaretKey = new PluginKey<boolean>('thickCaret');
+
+/**
+ * Draw a thicker, high-contrast text caret in the editor.
+ *
+ * The native caret is only 1px wide and stays hard to notice in every theme,
+ * regardless of color. We hide it via CSS (`caret-color: transparent`) and
+ * render our own wider blinking bar (`.thick-caret`) as a widget decoration at
+ * the cursor — but only while the editor is focused and the selection is an
+ * empty text cursor, so it never shows while a code block (CodeMirror, which
+ * draws its own cursor) is being edited.
+ */
+function thickCaretPlugin(): Plugin {
+  return new Plugin({
+    key: thickCaretKey,
+    state: {
+      init: () => false,
+      apply: (tr, focused) => {
+        const next = tr.getMeta(thickCaretKey);
+        return typeof next === 'boolean' ? next : focused;
+      },
+    },
+    props: {
+      handleDOMEvents: {
+        focus: (view) => {
+          view.dispatch(view.state.tr.setMeta(thickCaretKey, true));
+          return false;
+        },
+        blur: (view) => {
+          view.dispatch(view.state.tr.setMeta(thickCaretKey, false));
+          return false;
+        },
+      },
+      decorations: (state) => {
+        const focused = thickCaretKey.getState(state);
+        const { selection } = state;
+        if (!focused || !selection.empty) return DecorationSet.empty;
+        const caret = Decoration.widget(
+          selection.head,
+          () => {
+            const el = document.createElement('span');
+            el.className = 'thick-caret';
+            el.setAttribute('aria-hidden', 'true');
+            return el;
+          },
+          { side: -1, key: 'thick-caret' },
+        );
+        return DecorationSet.create(state.doc, [caret]);
+      },
+    },
+  });
+}
+
+function addThickCaret(ctx: Ctx): void {
+  ctx.update(prosePluginsCtx, (prev) => [...prev, thickCaretPlugin()]);
+}
+
 function configurePasteHandling(ctx: Ctx): void {
   ctx.update(editorViewOptionsCtx, (prev) => ({
     ...prev,
@@ -116,6 +197,10 @@ export function MilkdownEditor({ value, onChange }: MilkdownEditorProps) {
     const crepe = new Crepe({
       root: host,
       defaultValue: normalizeMathDelimiters(value),
+      features: {
+        // Hide the "Please enter..." hint that appears on every empty line.
+        [Crepe.Feature.Placeholder]: false,
+      },
       featureConfigs: {
         // Don't let a single malformed formula blow up the whole render.
         [Crepe.Feature.Latex]: {
@@ -124,7 +209,11 @@ export function MilkdownEditor({ value, onChange }: MilkdownEditorProps) {
       },
     });
 
-    crepe.editor.config(preferRenderedMath).config(configurePasteHandling);
+    crepe.editor
+      .config(preferRenderedMath)
+      .config(configurePasteHandling)
+      .config(keepBlockHandleInGutter)
+      .config(addThickCaret);
 
     crepe.on((listener) => {
       listener.markdownUpdated((_ctx, markdown) => {

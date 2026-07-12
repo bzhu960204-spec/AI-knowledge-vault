@@ -49,3 +49,13 @@ export interface NoteRequest {
 export interface FolderNode extends Folder {
   children: FolderNode[];
 }
+
+export type ExportFormat = 'HTML' | 'PDF';
+
+export interface ExportRequest {
+  noteIds: number[];
+  folderId?: number | null;
+  includeSubfolders?: boolean;
+  includeQuestion: boolean;
+  title?: string;
+}

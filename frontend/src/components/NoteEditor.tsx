@@ -66,6 +66,16 @@ export function NoteEditor({ noteId }: NoteEditorProps) {
   const [copied, setCopied] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const copyTimer = useRef<number | undefined>(undefined);
+  const questionTaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Grow the question textarea to fit its content (e.g. when a long question
+  // is pasted in) so nothing gets clipped behind a fixed 2-row height.
+  const autoSizeQuestion = useCallback(() => {
+    const ta = questionTaRef.current;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = `${ta.scrollHeight}px`;
+  }, []);
 
   // Each editable field is mirrored into a ref so the save payload always
   // reads the LATEST value, avoiding the stale-closure lag that made title,
@@ -136,6 +146,12 @@ export function NoteEditor({ noteId }: NoteEditorProps) {
       flushSave();
     };
   }, [note?.id, flushSave]);
+
+  // Keep the question box tall enough for its content whenever it's shown or
+  // its value changes (loading a note, expanding, pasting, typing).
+  useEffect(() => {
+    if (questionOpen) autoSizeQuestion();
+  }, [questionOpen, question, autoSizeQuestion]);
 
   // Allow leaving fullscreen reading mode with the Escape key.
   useEffect(() => {
@@ -300,12 +316,14 @@ export function NoteEditor({ noteId }: NoteEditorProps) {
                   </button>
                 </div>
                 <textarea
+                  ref={questionTaRef}
                   value={question}
                   autoFocus={!question}
-                  rows={2}
+                  rows={1}
                   onChange={(e) => {
                     setQuestion(e.target.value);
                     questionRef.current = e.target.value;
+                    autoSizeQuestion();
                     if (!composingRef.current) scheduleSave();
                   }}
                   onCompositionStart={() => {
@@ -316,6 +334,7 @@ export function NoteEditor({ noteId }: NoteEditorProps) {
                     const value = e.currentTarget.value;
                     setQuestion(value);
                     questionRef.current = value;
+                    autoSizeQuestion();
                     scheduleSave();
                   }}
                   onBlur={() => {
@@ -323,7 +342,7 @@ export function NoteEditor({ noteId }: NoteEditorProps) {
                     if (!questionRef.current.trim()) setQuestionOpen(false);
                   }}
                   placeholder="What did you ask the AI?"
-                  className="w-full resize-y bg-transparent text-sm leading-relaxed text-text outline-none placeholder:text-muted"
+                  className="w-full resize-none overflow-hidden bg-transparent text-sm leading-relaxed text-text outline-none placeholder:text-muted"
                 />
               </div>
               {/* Downward tail pointing at the answer */}

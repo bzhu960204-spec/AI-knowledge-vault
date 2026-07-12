@@ -1,5 +1,6 @@
 import { api } from './client';
 import type {
+  ExportRequest,
   Folder,
   FolderRequest,
   Note,
@@ -41,6 +42,10 @@ export const notesApi = {
   reorder: (ids: number[]) =>
     api.patch('/notes/reorder', { ids }).then(() => undefined),
   remove: (id: number) => api.delete(`/notes/${id}`).then(() => undefined),
+  exportHtml: (body: ExportRequest) =>
+    api
+      .post<string>('/notes/export', body, { responseType: 'text' })
+      .then((r) => r.data),
 };
 
 export const tagsApi = {
