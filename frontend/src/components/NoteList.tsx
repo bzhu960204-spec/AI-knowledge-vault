@@ -7,6 +7,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { useCreateNote, useNotes } from '../hooks/useNotes';
 import { useSelectionStore } from '../store/useSelectionStore';
+import type { ListDensity } from '../store/useSelectionStore';
 import type { NoteSummary } from '../api/types';
 import { ExportModal } from './ExportModal';
 
@@ -26,6 +27,8 @@ export function NoteList({
   const checkedNoteIds = useSelectionStore((s) => s.checkedNoteIds);
   const toggleChecked = useSelectionStore((s) => s.toggleChecked);
   const setChecked = useSelectionStore((s) => s.setChecked);
+  const density = useSelectionStore((s) => s.density);
+  const setDensity = useSelectionStore((s) => s.setDensity);
 
   const [exportOpen, setExportOpen] = useState(false);
 
@@ -42,10 +45,10 @@ export function NoteList({
     createNote.mutate(
       {
         title: 'Untitled',
-        contentMarkdown: '',
         folderId: activeTag ? null : selectedFolderId,
         sourceModel: null,
         tags: [],
+        segments: [{ question: null, answerHtml: '' }],
       },
       { onSuccess: (note) => selectNote(note.id) },
     );
@@ -56,6 +59,10 @@ export function NoteList({
   const orderedCheckedIds = notes
     .map((n) => n.id)
     .filter((id) => checkedSet.has(id));
+  // Title of the first selected note, used as the default export filename.
+  const firstCheckedTitle = notes.find(
+    (n) => n.id === orderedCheckedIds[0],
+  )?.title;
   const allChecked =
     notes.length > 0 && orderedCheckedIds.length === notes.length;
 
@@ -85,6 +92,30 @@ export function NoteList({
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <span className="text-sm font-semibold text-text">{heading}</span>
         <div className="flex items-center gap-1">
+          {!exportMode && notes.length > 0 && (
+            <button
+              type="button"
+              onClick={() =>
+                setDensity(density === 'compact' ? 'comfortable' : 'compact')
+              }
+              title={
+                density === 'compact'
+                  ? 'Compact list — click to show previews'
+                  : 'Showing previews — click for a compact list'
+              }
+              aria-pressed={density === 'compact'}
+              className={`flex h-7 w-7 items-center justify-center rounded-md text-sm transition hover:bg-surface-2 hover:text-accent ${
+                density === 'compact'
+                  ? 'bg-surface-2 text-accent'
+                  : 'text-muted'
+              }`}
+              style={
+                density === 'compact' ? { color: 'var(--accent)' } : undefined
+              }
+            >
+              ≣
+            </button>
+          )}
           {showSubfolderToggle && !exportMode && (
             <button
               type="button"
@@ -185,6 +216,7 @@ export function NoteList({
                 <NoteItem
                   key={note.id}
                   note={note}
+                  density={density}
                   selected={selectedNoteId === note.id}
                   onSelect={() => selectNote(note.id)}
                   exportMode={exportMode}
@@ -202,7 +234,10 @@ export function NoteList({
         onClose={() => setExportOpen(false)}
         noteIds={orderedCheckedIds}
         totalCount={orderedCheckedIds.length}
-        defaultTitle={activeTag ? `#${activeTag}` : 'Exported Notes'}
+        defaultTitle={
+          firstCheckedTitle ??
+          (activeTag ? `#${activeTag}` : 'Exported Notes')
+        }
       />
     </div>
   );
@@ -210,6 +245,7 @@ export function NoteList({
 
 function NoteItem({
   note,
+  density,
   selected,
   onSelect,
   exportMode,
@@ -217,12 +253,17 @@ function NoteItem({
   onToggleChecked,
 }: {
   note: NoteSummary;
+  density: ListDensity;
   selected: boolean;
   onSelect: () => void;
   exportMode: boolean;
   checked: boolean;
   onToggleChecked: () => void;
 }) {
+  const compact = density === 'compact';
+  // In compact mode only the selected row expands to reveal its preview/tags.
+  const showDetails = !compact || (selected && !exportMode);
+
   const { setNodeRef, listeners, attributes, isDragging, transform, transition } =
     useSortable({
       id: `note:${note.id}`,
@@ -243,7 +284,9 @@ function NoteItem({
       <button
         type="button"
         {...rowProps}
-        className={`flex w-full items-start gap-2 border-b border-border px-4 py-3 text-left transition hover:bg-surface-2 ${
+        className={`flex w-full items-start gap-2 border-b border-border px-4 text-left transition hover:bg-surface-2 ${
+          compact ? 'py-1.5' : 'py-3'
+        } ${
           (selected && !exportMode) || (checked && exportMode)
             ? 'bg-surface-2'
             : ''
@@ -275,12 +318,12 @@ function NoteItem({
               </span>
             )}
           </span>
-          {note.excerpt && (
+          {note.excerpt && showDetails && (
             <span className="mt-1 line-clamp-2 block text-xs text-muted">
               {note.excerpt}
             </span>
           )}
-          {note.tags.length > 0 && (
+          {note.tags.length > 0 && showDetails && (
             <span className="mt-1.5 flex flex-wrap gap-1">
               {note.tags.map((t) => (
                 <span key={t} className="text-[10px] text-accent">

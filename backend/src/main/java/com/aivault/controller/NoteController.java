@@ -5,9 +5,11 @@ import com.aivault.dto.MoveNoteRequest;
 import com.aivault.dto.NoteDto;
 import com.aivault.dto.NoteRequest;
 import com.aivault.dto.NoteSummaryDto;
+import com.aivault.dto.QuestionImageDto;
 import com.aivault.dto.ReorderNotesRequest;
 import com.aivault.service.ExportService;
 import com.aivault.service.NoteService;
+import com.aivault.service.QuestionImageService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -21,8 +23,10 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -32,10 +36,13 @@ public class NoteController {
 
     private final NoteService noteService;
     private final ExportService exportService;
+    private final QuestionImageService questionImageService;
 
-    public NoteController(NoteService noteService, ExportService exportService) {
+    public NoteController(NoteService noteService, ExportService exportService,
+                         QuestionImageService questionImageService) {
         this.noteService = noteService;
         this.exportService = exportService;
+        this.questionImageService = questionImageService;
     }
 
     @GetMapping
@@ -82,6 +89,26 @@ public class NoteController {
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         noteService.delete(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping(value = "/{id}/segments/{segmentId}/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public QuestionImageDto uploadQuestionImage(
+            @PathVariable Long id,
+            @PathVariable Long segmentId,
+            @RequestPart("file") MultipartFile file
+    ) {
+        return questionImageService.upload(id, segmentId, file);
+    }
+
+    @DeleteMapping("/{id}/segments/{segmentId}/images/{imageId}")
+    public ResponseEntity<Void> deleteQuestionImage(
+            @PathVariable Long id,
+            @PathVariable Long segmentId,
+            @PathVariable Long imageId
+    ) {
+        questionImageService.delete(segmentId, imageId);
         return ResponseEntity.noContent().build();
     }
 

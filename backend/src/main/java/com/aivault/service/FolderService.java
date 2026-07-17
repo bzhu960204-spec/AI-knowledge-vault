@@ -56,6 +56,26 @@ public class FolderService {
     }
 
     @Transactional
+    public void reorder(List<Long> orderedIds) {
+        if (orderedIds == null || orderedIds.isEmpty()) {
+            return;
+        }
+        List<Folder> folders = folderRepository.findAllById(orderedIds);
+        java.util.Map<Long, Folder> byId = new java.util.HashMap<>();
+        for (Folder folder : folders) {
+            byId.put(folder.getId(), folder);
+        }
+        int index = 0;
+        for (Long id : orderedIds) {
+            Folder folder = byId.get(id);
+            if (folder != null) {
+                folder.setSortOrder(index++);
+            }
+        }
+        folderRepository.saveAll(byId.values());
+    }
+
+    @Transactional
     public void delete(Long id) {
         Folder folder = folderRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Folder not found: " + id));

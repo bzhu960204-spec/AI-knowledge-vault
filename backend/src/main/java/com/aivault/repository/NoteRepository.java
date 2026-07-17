@@ -24,9 +24,13 @@ public interface NoteRepository extends JpaRepository<Note, Long> {
             select distinct n from Note n
             left join n.tags t
             where lower(n.title) like lower(concat('%', :q, '%'))
-               or lower(n.question) like lower(concat('%', :q, '%'))
-               or lower(n.contentMarkdown) like lower(concat('%', :q, '%'))
                or lower(t.name) like lower(concat('%', :q, '%'))
+               or exists (
+                   select s from NoteSegment s
+                   where s.noteId = n.id
+                     and (lower(s.question) like lower(concat('%', :q, '%'))
+                          or lower(s.answerHtml) like lower(concat('%', :q, '%')))
+               )
             order by n.updatedAt desc
             """)
     List<Note> search(@Param("q") String q);

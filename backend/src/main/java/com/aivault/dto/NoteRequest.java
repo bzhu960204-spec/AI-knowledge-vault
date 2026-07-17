@@ -6,10 +6,9 @@ import java.util.List;
 
 public record NoteRequest(
         @NotNull String title,
-        String question,
-        String contentMarkdown,
         Long folderId,
         String sourceModel,
-        List<String> tags
+        List<String> tags,
+        List<NoteSegmentRequest> segments
 ) {
 }

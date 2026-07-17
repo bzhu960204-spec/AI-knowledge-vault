@@ -113,3 +113,39 @@ export function useReorderNotes(params: {
 export function useTags() {
   return useQuery({ queryKey: ['tags'], queryFn: tagsApi.list });
 }
+
+export function useUploadQuestionImage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      noteId,
+      segmentId,
+      file,
+    }: {
+      noteId: number;
+      segmentId: number;
+      file: File;
+    }) => notesApi.uploadQuestionImage(noteId, segmentId, file),
+    onSuccess: (_img, { noteId }) => {
+      qc.invalidateQueries({ queryKey: ['note', noteId] });
+    },
+  });
+}
+
+export function useDeleteQuestionImage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      noteId,
+      segmentId,
+      imageId,
+    }: {
+      noteId: number;
+      segmentId: number;
+      imageId: number;
+    }) => notesApi.deleteQuestionImage(noteId, segmentId, imageId),
+    onSuccess: (_v, { noteId }) => {
+      qc.invalidateQueries({ queryKey: ['note', noteId] });
+    },
+  });
+}

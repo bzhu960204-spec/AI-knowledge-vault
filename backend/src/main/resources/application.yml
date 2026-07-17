@@ -24,6 +24,10 @@ spring:
     console:
       enabled: true
       path: /h2-console
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 12MB
 
 server:
   port: 8080
@@ -31,3 +35,5 @@ server:
 app:
   cors:
     allowed-origins: "http://localhost:5173"
+  uploads:
+    dir: ./data/uploads

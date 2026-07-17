@@ -1,11 +1,12 @@
 # AI Answer Vault
 
 A local, single-user web app to **collect, categorize, and search LLM answers**.
-Organize answers in nested folders and tags, and edit them in a Markdown-native
-WYSIWYG editor that handles pasted LLM output (code blocks, tables, math) smoothly.
+Organize answers in nested folders and tags, and edit them in a rich-text
+WYSIWYG editor that handles pasted LLM output (links, code blocks, tables, math)
+smoothly.
 
 - **Frontend:** Vite + React + TypeScript, TanStack Query, Zustand, Tailwind CSS,
-  Milkdown Crepe editor, dnd-kit
+  TipTap editor (with KaTeX math), dnd-kit
 - **Backend:** Spring Boot 3 + Spring Data JPA + H2 (file mode, data persisted to disk)
 
 ## Features

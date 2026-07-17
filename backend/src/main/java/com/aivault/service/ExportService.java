@@ -2,20 +2,30 @@ package com.aivault.service;
 
 import com.aivault.dto.ExportRequest;
 import com.aivault.entity.Note;
+import com.aivault.entity.NoteSegment;
+import com.aivault.entity.QuestionImage;
 import com.aivault.entity.Tag;
 import com.aivault.repository.FolderRepository;
 import com.aivault.repository.NoteRepository;
+import com.aivault.repository.NoteSegmentRepository;
+import com.aivault.repository.QuestionImageRepository;
 import com.vladsch.flexmark.ext.gfm.strikethrough.StrikethroughExtension;
 import com.vladsch.flexmark.ext.gfm.tasklist.TaskListExtension;
 import com.vladsch.flexmark.ext.tables.TablesExtension;
 import com.vladsch.flexmark.html.HtmlRenderer;
 import com.vladsch.flexmark.parser.Parser;
 import com.vladsch.flexmark.util.data.MutableDataSet;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
@@ -35,12 +45,21 @@ public class ExportService {
 
     private final NoteRepository noteRepository;
     private final FolderRepository folderRepository;
+    private final NoteSegmentRepository segmentRepository;
+    private final QuestionImageRepository questionImageRepository;
+    private final Path uploadDir;
     private final Parser parser;
     private final HtmlRenderer renderer;
 
-    public ExportService(NoteRepository noteRepository, FolderRepository folderRepository) {
+    public ExportService(NoteRepository noteRepository, FolderRepository folderRepository,
+                         NoteSegmentRepository segmentRepository,
+                         QuestionImageRepository questionImageRepository,
+                         @Value("${app.uploads.dir:./data/uploads}") String uploadDir) {
         this.noteRepository = noteRepository;
         this.folderRepository = folderRepository;
+        this.segmentRepository = segmentRepository;
+        this.questionImageRepository = questionImageRepository;
+        this.uploadDir = Paths.get(uploadDir).toAbsolutePath().normalize();
         MutableDataSet options = new MutableDataSet();
         options.set(Parser.EXTENSIONS, List.of(
                 TablesExtension.create(),
@@ -100,8 +119,7 @@ public class ExportService {
                 : "Exported Notes";
 
         StringBuilder body = new StringBuilder();
-        for (int i = 0; i < notes.size(); i++) {
-            Note note = notes.get(i);
+        for (Note note : notes) {
             body.append("<article class=\"note\">");
             body.append("<h1 class=\"note-title\">").append(escape(note.getTitle())).append("</h1>");
 
@@ -110,15 +128,14 @@ public class ExportService {
                 body.append("<p class=\"note-meta\">").append(meta).append("</p>");
             }
 
-            if (request.includeQuestion() && note.getQuestion() != null && !note.getQuestion().isBlank()) {
-                body.append("<div class=\"note-question\"><div class=\"note-question-label\">Question</div>");
-                body.append(renderMarkdown(note.getQuestion()));
-                body.append("</div>");
+            for (NoteSegment segment : segmentRepository.findByNoteIdOrderByPositionAsc(note.getId())) {
+                if (request.includeQuestion()) {
+                    body.append(renderQuestionBlock(segment));
+                }
+                body.append("<div class=\"note-body\">");
+                body.append(renderAnswer(segment.getAnswerHtml()));
+                body.append(CLOSE_DIV);
             }
-
-            body.append("<div class=\"note-body\">");
-            body.append(renderMarkdown(note.getContentMarkdown()));
-            body.append("</div>");
             body.append("</article>");
         }
 
@@ -126,6 +143,23 @@ public class ExportService {
                 .replace("{{title}}", escape(docTitle))
                 .replace("{{style}}", STYLE)
                 .replace("{{body}}", body.toString());
+    }
+
+    /** The "Question" block: optional question text plus any inlined images. */
+    private String renderQuestionBlock(NoteSegment segment) {
+        boolean hasText = segment.getQuestion() != null && !segment.getQuestion().isBlank();
+        String images = renderQuestionImages(segment.getId());
+        if (!hasText && images.isEmpty()) {
+            return "";
+        }
+        StringBuilder block = new StringBuilder(
+                "<div class=\"note-question\"><div class=\"note-question-label\">Question</div>");
+        if (hasText) {
+            block.append(renderMarkdown(segment.getQuestion()));
+        }
+        block.append(images);
+        block.append(CLOSE_DIV);
+        return block.toString();
     }
 
     private String buildMeta(Note note) {
@@ -143,6 +177,49 @@ public class ExportService {
         return String.join(" · ", parts);
     }
 
+    /** Render every question image inline as a self-contained base64 data URI. */
+    private String renderQuestionImages(Long segmentId) {
+        List<QuestionImage> images = questionImageRepository.findBySegmentIdOrderByCreatedAtAsc(segmentId);
+        if (images.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("<div class=\"note-question-images\">");
+        for (QuestionImage image : images) {
+            String dataUri = toDataUri(image);
+            if (dataUri == null) {
+                continue;
+            }
+            String alt = image.getOriginalName() != null ? escape(image.getOriginalName()) : "";
+            sb.append("<img src=\"").append(dataUri).append("\" alt=\"").append(alt).append("\"/>");
+        }
+        sb.append(CLOSE_DIV);
+        return sb.toString();
+    }
+
+    private String toDataUri(QuestionImage image) {
+        try {
+            Path target = uploadDir.resolve(image.getFilename()).normalize();
+            if (!target.startsWith(uploadDir) || !Files.exists(target)) {
+                return null;
+            }
+            byte[] bytes = Files.readAllBytes(target);
+            String contentType = image.getContentType() != null ? image.getContentType() : "image/png";
+            return "data:" + contentType + ";base64," + Base64.getEncoder().encodeToString(bytes);
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Answers are stored as rich-text HTML by the editor, so they are embedded
+     * directly. Math arrives either as TipTap {@code data-latex} nodes or as
+     * legacy {@code $…$} text; both are rendered client-side by KaTeX (see the
+     * document template's {@code __renderMath}).
+     */
+    private String renderAnswer(String html) {
+        return html == null ? "" : html;
+    }
+
     private String renderMarkdown(String markdown) {
         if (markdown == null || markdown.isBlank()) {
             return "";
@@ -157,6 +234,7 @@ public class ExportService {
     }
 
     private static final String MATH_MARK = "\uE000";
+    private static final String CLOSE_DIV = "</div>";
     private static final Pattern BLOCK_MATH = Pattern.compile("\\$\\$(.+?)\\$\\$", Pattern.DOTALL);
     private static final Pattern INLINE_MATH = Pattern.compile("\\$([^$\\n]+?)\\$");
 
@@ -228,6 +306,19 @@ public class ExportService {
               window.__mathReady = false;
               function __renderMath() {
                 try {
+                  // TipTap math nodes carry their LaTeX in data-latex.
+                  if (window.katex) {
+                    document.querySelectorAll('[data-latex]').forEach(function (el) {
+                      var display = el.getAttribute('data-type') === 'block-math';
+                      try {
+                        window.katex.render(el.getAttribute('data-latex'), el, {
+                          displayMode: display,
+                          throwOnError: false
+                        });
+                      } catch (e) { /* leave raw TeX on failure */ }
+                    });
+                  }
+                  // Legacy notes keep inline $…$ / $$…$$ delimiters.
                   if (window.renderMathInElement) {
                     window.renderMathInElement(document.body, {
                       delimiters: [
@@ -283,6 +374,18 @@ public class ExportService {
               margin-bottom: 4px;
             }
             .note-question > *:last-child { margin-bottom: 0; }
+            .note-question-images {
+              display: flex;
+              flex-wrap: wrap;
+              gap: 8px;
+              margin-top: 10px;
+            }
+            .note-question-images img {
+              max-width: 320px;
+              max-height: 240px;
+              border: 1px solid #d7d9ff;
+              border-radius: 6px;
+            }
             .note-body h1, .note-body h2, .note-body h3 { line-height: 1.3; margin: 1.4em 0 0.6em; }
             .note-body p { margin: 0.8em 0; }
             .note-body pre {

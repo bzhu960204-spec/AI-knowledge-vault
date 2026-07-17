@@ -71,7 +71,7 @@ export function FolderTree({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-2 pb-3">
+      <div className="flex flex-1 flex-col overflow-y-auto px-2 pb-3">
         <RootDropZone
           active={selectedFolderId === null && activeTag === null}
           onSelect={() => selectFolder(null)}
@@ -93,6 +93,7 @@ export function FolderTree({
             />
           ))
         )}
+        <FolderListEndZone />
       </div>
 
       <TagFilterHint activeTag={activeTag} onClear={() => selectFolder(null)} />
@@ -124,6 +125,18 @@ function RootDropZone({
   );
 }
 
+function FolderListEndZone() {
+  const { setNodeRef } = useDroppable({ id: 'folder-list-end' });
+  const active = useSelectionStore((s) => s.folderDropRootEnd);
+  return (
+    <div ref={setNodeRef} className="relative min-h-[48px] flex-1">
+      {active && (
+        <span className="pointer-events-none absolute inset-x-1 top-1 h-0.5 rounded bg-accent" />
+      )}
+    </div>
+  );
+}
+
 interface FolderRowProps {
   node: FolderNode;
   depth: number;
@@ -141,6 +154,9 @@ function FolderRow({ node, depth, expanded, onToggle }: FolderRowProps) {
   const isOpen = expanded.has(node.id);
   const hasChildren = node.children.length > 0;
   const isSelected = selectedFolderId === node.id;
+  const dropTargetId = useSelectionStore((s) => s.folderDropTargetId);
+  const dropPosition = useSelectionStore((s) => s.folderDropPosition);
+  const dropHere = dropTargetId === node.id ? dropPosition : null;
 
   const {
     setNodeRef: setDragRef,
@@ -189,11 +205,19 @@ function FolderRow({ node, depth, expanded, onToggle }: FolderRowProps) {
         ref={setDropRef}
         className={`group relative flex items-center gap-1 rounded-lg pr-1 transition ${
           isSelected ? 'bg-surface-2' : 'hover:bg-surface-2'
-        } ${isOver ? 'ring-1 ring-accent' : ''} ${
-          isDragging ? 'opacity-50' : ''
-        }`}
+        } ${
+          (isOver && dropHere == null) || dropHere === 'into'
+            ? 'ring-1 ring-accent'
+            : ''
+        } ${isDragging ? 'opacity-50' : ''}`}
         style={{ paddingLeft: `${depth * 14}px` }}
       >
+        {dropHere === 'before' && (
+          <span className="pointer-events-none absolute inset-x-1 top-0 h-0.5 -translate-y-1/2 rounded bg-accent" />
+        )}
+        {dropHere === 'after' && (
+          <span className="pointer-events-none absolute inset-x-1 bottom-0 h-0.5 translate-y-1/2 rounded bg-accent" />
+        )}
         <button
           type="button"
           onClick={() => hasChildren && onToggle(node.id)}

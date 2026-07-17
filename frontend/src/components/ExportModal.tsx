@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { notesApi } from '../api/endpoints';
 import type { ExportFormat } from '../api/types';
 
@@ -89,6 +89,14 @@ export function ExportModal({
   const [title, setTitle] = useState(defaultTitle ?? 'Exported Notes');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Refresh the default title each time the dialog opens so it reflects the
+  // currently selected notes. Users can still edit it before exporting.
+  useEffect(() => {
+    if (open) {
+      setTitle(defaultTitle ?? 'Exported Notes');
+    }
+  }, [open, defaultTitle]);
 
   if (!open) return null;
 

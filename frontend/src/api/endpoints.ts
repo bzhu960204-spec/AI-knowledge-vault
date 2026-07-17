@@ -6,6 +6,7 @@ import type {
   Note,
   NoteRequest,
   NoteSummary,
+  QuestionImage,
 } from './types';
 
 export const foldersApi = {
@@ -14,6 +15,8 @@ export const foldersApi = {
     api.post<Folder>('/folders', body).then((r) => r.data),
   update: (id: number, body: FolderRequest) =>
     api.put<Folder>(`/folders/${id}`, body).then((r) => r.data),
+  reorder: (ids: number[]) =>
+    api.patch('/folders/reorder', { ids }).then(() => undefined),
   remove: (id: number) => api.delete(`/folders/${id}`).then(() => undefined),
 };
 
@@ -46,6 +49,23 @@ export const notesApi = {
     api
       .post<string>('/notes/export', body, { responseType: 'text' })
       .then((r) => r.data),
+  uploadQuestionImage: (noteId: number, segmentId: number, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api
+      .post<QuestionImage>(
+        `/notes/${noteId}/segments/${segmentId}/images`,
+        form,
+        {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        },
+      )
+      .then((r) => r.data);
+  },
+  deleteQuestionImage: (noteId: number, segmentId: number, imageId: number) =>
+    api
+      .delete(`/notes/${noteId}/segments/${segmentId}/images/${imageId}`)
+      .then(() => undefined),
 };
 
 export const tagsApi = {

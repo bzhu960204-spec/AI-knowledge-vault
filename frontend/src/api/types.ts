@@ -24,25 +24,43 @@ export interface NoteSummary {
   sortOrder: number;
 }
 
+export interface QuestionImage {
+  id: number;
+  url: string;
+  originalName?: string | null;
+}
+
+export interface NoteSegment {
+  id: number;
+  position: number;
+  question: string | null;
+  answerHtml: string;
+  images: QuestionImage[];
+}
+
 export interface Note {
   id: number;
   title: string;
-  question: string | null;
-  contentMarkdown: string;
   folderId: number | null;
   sourceModel: string | null;
   tags: string[];
+  segments: NoteSegment[];
   createdAt: string;
   updatedAt: string;
 }
 
+export interface NoteSegmentRequest {
+  id?: number | null;
+  question?: string | null;
+  answerHtml: string;
+}
+
 export interface NoteRequest {
   title: string;
-  question?: string | null;
-  contentMarkdown: string;
   folderId?: number | null;
   sourceModel?: string | null;
   tags: string[];
+  segments: NoteSegmentRequest[];
 }
 
 /** A folder node with its children resolved, for tree rendering. */

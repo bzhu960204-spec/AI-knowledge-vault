@@ -4,7 +4,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { foldersApi } from '../api/endpoints';
-import type { FolderRequest } from '../api/types';
+import type { Folder, FolderRequest } from '../api/types';
 
 const KEY = ['folders'];
 
@@ -36,6 +36,34 @@ export function useDeleteFolder() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: KEY });
       qc.invalidateQueries({ queryKey: ['notes'] });
+    },
+  });
+}
+
+export function useReorderFolders() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (orderedIds: number[]) => foldersApi.reorder(orderedIds),
+    onMutate: async (orderedIds) => {
+      await qc.cancelQueries({ queryKey: KEY });
+      const prev = qc.getQueryData<Folder[]>(KEY);
+      if (prev) {
+        const byId = new Map(prev.map((f) => [f.id, f]));
+        const next = orderedIds
+          .map((id, index) => {
+            const folder = byId.get(id);
+            return folder ? { ...folder, sortOrder: index } : undefined;
+          })
+          .filter((f): f is Folder => f != null);
+        qc.setQueryData(KEY, next);
+      }
+      return { prev };
+    },
+    onError: (_err, _ids, ctx) => {
+      if (ctx?.prev) qc.setQueryData(KEY, ctx.prev);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: KEY });
     },
   });
 }

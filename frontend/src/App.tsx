@@ -7,6 +7,7 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragOverEvent,
   type DragStartEvent,
   type Modifier,
 } from '@dnd-kit/core';
@@ -24,7 +25,7 @@ import { NoteList } from './components/NoteList';
 import { NoteEditor } from './components/NoteEditor';
 import { SearchModal } from './components/SearchModal';
 import { ThemeSwitcher } from './theme/ThemeSwitcher';
-import { useFolders, useUpdateFolder } from './hooks/useFolders';
+import { useFolders, useReorderFolders, useUpdateFolder } from './hooks/useFolders';
 import { useMoveNote, useNotes, useReorderNotes } from './hooks/useNotes';
 import { useSelectionStore } from './store/useSelectionStore';
 
@@ -49,6 +50,24 @@ const snapToCursor: Modifier = ({
   };
 };
 
+/**
+ * Where inside the target folder row the pointer was released:
+ * top / bottom thirds mean "reorder as a sibling", the middle means
+ * "drop into the folder as a child".
+ */
+function folderDropZone(event: DragOverEvent | DragEndEvent): 'before' | 'after' | 'into' {
+  const rect = event.over?.rect;
+  const coords = event.activatorEvent
+    ? getEventCoordinates(event.activatorEvent)
+    : null;
+  if (!rect || !coords) return 'into';
+  const pointerY = coords.y + event.delta.y;
+  const ratio = (pointerY - rect.top) / rect.height;
+  if (ratio < 0.3) return 'before';
+  if (ratio > 0.7) return 'after';
+  return 'into';
+}
+
 /** Panel sizes (percent of the group width) used by the collapse toggles. */
 const COLLAPSED = 3;
 const FOLDER_OPEN = 18;
@@ -69,6 +88,8 @@ export default function App() {
 
   const { data: folders = [] } = useFolders();
   const updateFolder = useUpdateFolder();
+  const reorderFolders = useReorderFolders();
+  const setFolderDrop = useSelectionStore((s) => s.setFolderDrop);
   const moveNote = useMoveNote();
 
   const noteParams = {
@@ -131,8 +152,107 @@ export default function App() {
     reorderNotes.mutate(orderedIds);
   }
 
+  /** Reorders a folder so it sits directly before/after a sibling folder. */
+  function reorderFolderNextTo(
+    activeId: number,
+    targetId: number,
+    placeAfter: boolean,
+  ) {
+    const sorted = [...folders].sort((a, b) => a.sortOrder - b.sortOrder);
+    const active = sorted.find((f) => f.id === activeId);
+    if (!active) return;
+    const withoutActive = sorted.filter((f) => f.id !== activeId);
+    const targetIndex = withoutActive.findIndex((f) => f.id === targetId);
+    if (targetIndex === -1) return;
+    withoutActive.splice(targetIndex + (placeAfter ? 1 : 0), 0, active);
+    reorderFolders.mutate(withoutActive.map((f) => f.id));
+  }
+
+  /** Moves a folder to the root level and places it last. */
+  function reorderFolderToRootEnd(folderId: number) {
+    const folder = folders.find((f) => f.id === folderId);
+    if (!folder) return;
+    if (folder.parentId !== null) {
+      updateFolder.mutate({
+        id: folderId,
+        body: { name: folder.name, parentId: null },
+      });
+    }
+    const sorted = [...folders].sort((a, b) => a.sortOrder - b.sortOrder);
+    const withoutActive = sorted.filter((f) => f.id !== folderId);
+    reorderFolders.mutate([...withoutActive.map((f) => f.id), folderId]);
+  }
+
+  function handleFolderDrop(
+    event: DragEndEvent,
+    overId: string,
+    targetFolderId: number | null,
+  ) {
+    const folderId = Number(String(event.active.id).replace('folder:', ''));
+    if (folderId === targetFolderId) return;
+    const folder = folders.find((f) => f.id === folderId);
+    if (!folder) return;
+
+    // Dropped in the empty area below the tree: move to the end of root.
+    if (overId === 'folder-list-end') {
+      reorderFolderToRootEnd(folderId);
+      return;
+    }
+
+    // Dropping onto a sibling folder's top/bottom edge reorders within the
+    // same level; dropping onto its middle (or onto root) reparents it.
+    if (overId.startsWith('folder:') && targetFolderId != null) {
+      const target = folders.find((f) => f.id === targetFolderId);
+      const zone = folderDropZone(event);
+      if (target && zone !== 'into' && folder.parentId === target.parentId) {
+        reorderFolderNextTo(folderId, targetFolderId, zone === 'after');
+        return;
+      }
+    }
+
+    // Reparent a folder (ignore if it is already there).
+    if (folder.parentId === targetFolderId) return;
+    updateFolder.mutate({
+      id: folderId,
+      body: { name: folder.name, parentId: targetFolderId },
+    });
+  }
+
+  function handleDragOver(event: DragOverEvent) {
+    const activeId = String(event.active.id);
+    const overRaw = event.over?.id;
+    if (!activeId.startsWith('folder:') || overRaw == null) {
+      setFolderDrop(null, null);
+      return;
+    }
+    const overId = String(overRaw);
+    if (overId === 'folder-list-end') {
+      setFolderDrop(null, null, true);
+      return;
+    }
+    if (!overId.startsWith('folder:')) {
+      setFolderDrop(null, null);
+      return;
+    }
+    const targetId = Number(overId.replace('folder:', ''));
+    const activeFolderId = Number(activeId.replace('folder:', ''));
+    if (targetId === activeFolderId) {
+      setFolderDrop(null, null);
+      return;
+    }
+    const active = folders.find((f) => f.id === activeFolderId);
+    const target = folders.find((f) => f.id === targetId);
+    const zone = folderDropZone(event);
+    const position =
+      zone !== 'into' && active && target && active.parentId === target.parentId
+        ? zone
+        : 'into';
+    setFolderDrop(targetId, position);
+  }
+
   function handleDragEnd(event: DragEndEvent) {
     setDragLabel(null);
+    setFolderDrop(null, null);
     const activeId = String(event.active.id);
     const overRaw = event.over?.id;
     if (overRaw == null) return;
@@ -147,7 +267,9 @@ export default function App() {
     }
 
     const targetFolderId =
-      overId === 'root' ? null : Number(overId.replace('folder:', ''));
+      overId === 'root' || overId === 'folder-list-end'
+        ? null
+        : Number(overId.replace('folder:', ''));
 
     if (activeId.startsWith('note:')) {
       // Move a note to another folder (ignore if already there).
@@ -158,15 +280,7 @@ export default function App() {
     }
 
     if (activeId.startsWith('folder:')) {
-      // Reparent a folder.
-      const folderId = Number(activeId.replace('folder:', ''));
-      if (folderId === targetFolderId) return;
-      const folder = folders.find((f) => f.id === folderId);
-      if (!folder || folder.parentId === targetFolderId) return;
-      updateFolder.mutate({
-        id: folderId,
-        body: { name: folder.name, parentId: targetFolderId },
-      });
+      handleFolderDrop(event, overId, targetFolderId);
     }
   }
 
@@ -175,8 +289,12 @@ export default function App() {
       sensors={sensors}
       collisionDetection={pointerWithin}
       onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
-      onDragCancel={() => setDragLabel(null)}
+      onDragCancel={() => {
+        setDragLabel(null);
+        setFolderDrop(null, null);
+      }}
     >
       <div className="flex h-screen flex-col bg-bg text-text">
         {/* Top bar */}

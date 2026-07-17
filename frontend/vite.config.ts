@@ -15,6 +15,10 @@ export default defineConfig({
         target: `http://localhost:${backendPort}`,
         changeOrigin: true,
       },
+      '/uploads': {
+        target: `http://localhost:${backendPort}`,
+        changeOrigin: true,
+      },
     },
   },
 })
