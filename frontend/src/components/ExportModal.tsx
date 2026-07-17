@@ -26,7 +26,7 @@ function triggerHtmlDownload(html: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-function triggerPrint(html: string) {
+function triggerPrint(html: string, docTitle: string) {
   const iframe = document.createElement('iframe');
   iframe.style.position = 'fixed';
   iframe.style.right = '0';
@@ -36,7 +36,12 @@ function triggerPrint(html: string) {
   iframe.style.border = '0';
   document.body.appendChild(iframe);
 
+  // Browsers derive the "Save as PDF" default filename from the top-level
+  // document's title, not the printed iframe's <title>. Temporarily swap it so
+  // the user's chosen title becomes the suggested filename, then restore it.
+  const originalTitle = document.title;
   const cleanup = () => {
+    document.title = originalTitle;
     window.setTimeout(() => iframe.remove(), 1000);
   };
 
@@ -48,6 +53,7 @@ function triggerPrint(html: string) {
   doc.open();
   doc.write(html);
   doc.close();
+  document.title = docTitle;
 
   const doPrint = () => {
     const win = iframe.contentWindow;
@@ -114,7 +120,7 @@ export function ExportModal({
       if (format === 'HTML') {
         triggerHtmlDownload(html, `${sanitizeFilename(title)}.html`);
       } else {
-        triggerPrint(html);
+        triggerPrint(html, sanitizeFilename(title));
       }
       onClose();
     } catch (e) {
