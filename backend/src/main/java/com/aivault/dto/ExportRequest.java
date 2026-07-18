@@ -14,6 +14,7 @@ public record ExportRequest(
         Long folderId,
         boolean includeSubfolders,
         boolean includeQuestion,
+        boolean stripLinks,
         String title
 ) {
 }

@@ -92,6 +92,7 @@ export function ExportModal({
 }: ExportModalProps) {
   const [format, setFormat] = useState<ExportFormat>('PDF');
   const [includeQuestion, setIncludeQuestion] = useState(true);
+  const [stripLinks, setStripLinks] = useState(true);
   const [title, setTitle] = useState(defaultTitle ?? 'Exported Notes');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -115,6 +116,7 @@ export function ExportModal({
         folderId: noteIds.length === 0 ? (folderId ?? null) : undefined,
         includeSubfolders: noteIds.length === 0 ? includeSubfolders : undefined,
         includeQuestion,
+        stripLinks,
         title,
       });
       if (format === 'HTML') {
@@ -199,6 +201,16 @@ export function ExportModal({
               className="h-4 w-4 accent-[var(--accent)]"
             />
             <span className="text-sm text-text">Include the question</span>
+          </label>
+
+          <label className="flex cursor-pointer items-center gap-2">
+            <input
+              type="checkbox"
+              checked={stripLinks}
+              onChange={(e) => setStripLinks(e.target.checked)}
+              className="h-4 w-4 accent-[var(--accent)]"
+            />
+            <span className="text-sm text-text">Remove reference links</span>
           </label>
 
           {error && <p className="text-xs text-red-500">{error}</p>}

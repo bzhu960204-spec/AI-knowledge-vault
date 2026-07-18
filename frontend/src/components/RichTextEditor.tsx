@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useEditor, EditorContent, ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
-import type { Editor } from '@tiptap/core';
-import type { Node as PMNode } from '@tiptap/pm/model';
 import { BubbleMenu } from '@tiptap/react/menus';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -9,7 +7,8 @@ import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
 import { Table, TableHeader, TableCell } from '@tiptap/extension-table';
 import TableRow from '@tiptap/extension-table-row';
-import { Mathematics, migrateMathStrings } from '@tiptap/extension-mathematics';
+import { BlockMath, InlineMath } from '@tiptap/extension-mathematics';
+import { marked } from 'marked';
 import 'katex/dist/katex.min.css';
 import {
   Bold,
@@ -71,99 +70,54 @@ function ResizableImageView({ node, updateAttributes, editor }: any) {
   );
 }
 
-// ── Plain-text math parsing (for paste) ──────────────────────────────────────
-// The Mathematics extension's `migrateMathStrings` only understands single-`$`
-// inline math on a single text node, so pasted `$$…$$` block math (or multi-line
-// formulas) never render. We parse the pasted plain text ourselves and build
-// proper `blockMath` / `inlineMath` nodes.
+// ── Fenced code detection (for paste) ────────────────────────────────────────
+// Fenced code block ```lang\n…\n``` — anywhere in the text, not just as the
+// whole clipboard. `[^\n]*` captures an optional language label.
+const FENCE_RE = /```([^\n]*)\n([\s\S]*?)\n?```/g;
 
-type MathJSON = { type: string; attrs?: Record<string, string>; text?: string; content?: MathJSON[] };
-
-// Inline `$…$` (no newline inside; not `$100$` currency).
-const INLINE_MATH_RE = /\$(?!\d+\$)([^\n]+?)\$(?!\d)/g;
-// Block `$$…$$` (may span multiple lines).
-const BLOCK_MATH_RE = /\$\$([\s\S]+?)\$\$/g;
-
-function hasMathDelimiters(text: string): boolean {
-  return /\$\$[\s\S]+?\$\$/.test(text) || /\$(?!\d+\$)[^\n]+?\$(?!\d)/.test(text);
-}
-
-/** Split a single line of text into text + inlineMath nodes. */
-function inlineContent(line: string): MathJSON[] {
-  const nodes: MathJSON[] = [];
-  let last = 0;
-  let m: RegExpExecArray | null;
-  INLINE_MATH_RE.lastIndex = 0;
-  while ((m = INLINE_MATH_RE.exec(line))) {
-    if (m.index > last) nodes.push({ type: 'text', text: line.slice(last, m.index) });
-    nodes.push({ type: 'inlineMath', attrs: { latex: m[1].trim() } });
-    last = m.index + m[0].length;
-  }
-  if (last < line.length) nodes.push({ type: 'text', text: line.slice(last) });
-  return nodes;
-}
-
-/** Turn a run of non-block-math text into paragraph nodes (one per line). */
-function textToParagraphs(text: string): MathJSON[] {
-  const blocks: MathJSON[] = [];
-  for (const line of text.split('\n')) {
-    if (!line.trim()) continue;
-    const content = inlineContent(line);
-    if (content.length) blocks.push({ type: 'paragraph', content });
-  }
-  return blocks;
-}
-
-/** Parse pasted plain text into a list of block nodes, converting math. */
-function parsePastedMath(text: string): MathJSON[] {
-  const blocks: MathJSON[] = [];
-  let last = 0;
-  let m: RegExpExecArray | null;
-  BLOCK_MATH_RE.lastIndex = 0;
-  while ((m = BLOCK_MATH_RE.exec(text))) {
-    blocks.push(
-      ...textToParagraphs(text.slice(last, m.index)),
-      { type: 'blockMath', attrs: { latex: m[1].trim() } },
-    );
-    last = m.index + m[0].length;
-  }
-  blocks.push(...textToParagraphs(text.slice(last)));
-  return blocks;
+/** True if the pasted text contains a fenced code block. */
+function hasFencedCode(text: string): boolean {
+  FENCE_RE.lastIndex = 0;
+  return FENCE_RE.test(text);
 }
 
 /**
- * Convert LaTeX in already-loaded content into math nodes.
+ * Render pasted Markdown to HTML.
  *
- * The extension's own `migrateMathStrings` only understands single-`$` inline
- * math on one text node, so legacy notes that stored a literal `$$…$$` block
- * (even embedded mid-paragraph) render as a broken red error. Here we first
- * rebuild any textblock containing `$$…$$` into `blockMath` + paragraph nodes,
- * then fall back to the built-in inline migration for the rest (which preserves
- * surrounding marks).
+ * LLM answers are Markdown, and the clipboard's own HTML often flattens fenced
+ * code diagrams (collapsing the whitespace ASCII / box-drawing art relies on)
+ * or drops structure. Rendering the Markdown ourselves keeps headings, lists,
+ * links, bold, code blocks (whitespace intact) all correct.
+ *
+ * LaTeX is shielded with placeholders first so Markdown doesn't mangle it (e.g.
+ * `a_b` → emphasis); the literal `$…$` / `$$…$$` is restored afterwards and
+ * left as plain text (the user renders it to math manually via the toolbar).
  */
-function migrateMath(editor: Editor) {
-  const { schema } = editor;
-  if (schema.nodes.blockMath) {
-    const tr = editor.state.tr;
-    const jobs: { from: number; to: number; nodes: PMNode[] }[] = [];
-    editor.state.doc.forEach((node, offset) => {
-      if (!node.isTextblock) return;
-      if (!/\$\$[\s\S]+?\$\$/.test(node.textContent)) return;
-      const nodes = parsePastedMath(node.textContent).map((j) => schema.nodeFromJSON(j));
-      jobs.push({ from: offset, to: offset + node.nodeSize, nodes });
-    });
-    // Apply last-to-first so earlier positions stay valid.
-    for (let i = jobs.length - 1; i >= 0; i--) {
-      tr.replaceWith(jobs[i].from, jobs[i].to, jobs[i].nodes);
-    }
-    if (jobs.length) {
-      tr.setMeta('addToHistory', false);
-      editor.view.dispatch(tr);
-    }
-  }
-  // Inline `$…$` for the remaining text (preserves surrounding marks).
-  migrateMathStrings(editor);
+function renderMarkdown(md: string): string {
+  const math: string[] = [];
+  const stash = (m: string) => `\u0000M${math.push(m) - 1}\u0000`;
+  const shielded = md
+    .replace(/\$\$[\s\S]+?\$\$/g, stash)
+    .replace(/\$(?!\d+\$)[^\n]+?\$(?!\d)/g, stash);
+  const html = marked.parse(shielded, { gfm: true, breaks: false, async: false }) as string;
+  return html.replace(/\u0000M(\d+)\u0000/g, (_, i) => math[Number(i)]);
 }
+
+// Math nodes with their built-in input rules stripped. The library's InlineMath
+// (`$$…$$`) and BlockMath (`$$$…$$$`) input rules auto-convert dollar-delimited
+// text on typing/paste; we remove them so `$…$` / `$$…$$` stays literal until the
+// user renders it manually via the toolbar. Nodes, commands, node views and
+// click handlers are all kept.
+const InlineMathNoRules = InlineMath.extend({
+  addInputRules() {
+    return [];
+  },
+});
+const BlockMathNoRules = BlockMath.extend({
+  addInputRules() {
+    return [];
+  },
+});
 
 const ResizableImage = Image.extend({
   addAttributes() {
@@ -200,9 +154,9 @@ interface RichTextEditorProps {
  * TipTap-based rich-text editor storing HTML.
  *
  * Unlike a Markdown editor, pasting keeps the clipboard's HTML intact, so links
- * and formatting survive verbatim. LaTeX written as `$…$` / `$$…$$` is turned
- * into interactive math nodes via the Mathematics extension (and legacy notes
- * are converted on load with `migrateMathStrings`).
+ * and formatting survive verbatim. Pasted LaTeX (`$…$` / `$$…$$`) stays as plain
+ * text; the user renders a selection to an interactive math node on demand via
+ * the toolbar's formula button (Mathematics extension).
  *
  * The editor is uncontrolled: remount it with a `key` to load new content.
  */
@@ -220,61 +174,58 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
       TableRow,
       TableHeader,
       TableCell,
-      Mathematics.configure({
+      InlineMathNoRules.configure({
         katexOptions: { throwOnError: false },
-        inlineOptions: {
-          onClick: (node, pos) => {
-            const latex = window.prompt('Edit formula (LaTeX):', node.attrs.latex);
-            if (latex != null) {
-              editor?.chain().setNodeSelection(pos).updateInlineMath({ latex }).focus().run();
-            }
-          },
+        onClick: (node, pos) => {
+          const latex = window.prompt('Edit formula (LaTeX):', node.attrs.latex);
+          if (latex != null) {
+            editor?.chain().setNodeSelection(pos).updateInlineMath({ latex }).focus().run();
+          }
         },
-        blockOptions: {
-          onClick: (node, pos) => {
-            const latex = window.prompt('Edit formula (LaTeX):', node.attrs.latex);
-            if (latex != null) {
-              editor?.chain().setNodeSelection(pos).updateBlockMath({ latex }).focus().run();
-            }
-          },
+      }),
+      BlockMathNoRules.configure({
+        katexOptions: { throwOnError: false },
+        onClick: (node, pos) => {
+          const latex = window.prompt('Edit formula (LaTeX):', node.attrs.latex);
+          if (latex != null) {
+            editor?.chain().setNodeSelection(pos).updateBlockMath({ latex }).focus().run();
+          }
         },
       }),
     ],
     content: value,
-    onCreate: ({ editor }) => {
-      // Convert legacy `$…$` / `$$…$$` text into interactive math nodes.
-      migrateMath(editor);
-    },
     onUpdate: ({ editor }) => {
       onChangeRef.current(editor.getHTML());
     },
     editorProps: {
+      // Answers don't support images. Strip any <img> that rides along in a
+      // rich HTML paste (e.g. copied web/Word content) before it's inserted.
+      transformPastedHTML: (html) => html.replace(/<img\b[^>]*>/gi, ''),
       handlePaste: (_, event) => {
         const items = event.clipboardData?.items;
-        if (!items) return false;
-        for (const item of Array.from(items)) {
-          if (item.type.startsWith('image/')) {
-            event.preventDefault();
-            const file = item.getAsFile();
-            if (!file) return true;
-            const reader = new FileReader();
-            reader.onload = (e) => {
-              const src = e.target?.result as string;
-              editor?.chain().focus().setImage({ src }).run();
-            };
-            reader.readAsDataURL(file);
-            return true;
+        if (items) {
+          for (const item of Array.from(items)) {
+            if (item.type.startsWith('image/')) {
+              // Drop pasted image data instead of inserting it into the answer.
+              event.preventDefault();
+              return true;
+            }
           }
         }
-        // Convert LaTeX in pasted plain text into math nodes. Handles `$$…$$`
-        // block math (incl. multi-line) and `$…$` inline math, which the
-        // extension's own migration cannot do on paste.
         const text = event.clipboardData?.getData('text/plain');
-        if (text && hasMathDelimiters(text)) {
+        // Fenced code blocks can't survive the clipboard's own HTML (the
+        // whitespace ASCII / box-drawing diagrams rely on collapses), so when
+        // the paste contains a code fence we render the Markdown ourselves via
+        // `marked` (this also handles any math inside it). Narrowed to fences
+        // only, so ordinary rich pastes keep their clipboard HTML untouched.
+        if (text && hasFencedCode(text)) {
           event.preventDefault();
-          editor?.chain().focus().insertContent(parsePastedMath(text)).run();
+          editor?.chain().focus().insertContent(renderMarkdown(text)).run();
           return true;
         }
+        // Otherwise keep TipTap's native paste (preserves rich clipboard HTML).
+        // Math is NOT auto-converted: `$…$` / `$$…$$` stays as literal text until
+        // the user selects it and applies the formula button.
         return false;
       },
       handleDrop: (_, event) => {
@@ -282,13 +233,8 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
         if (!files?.length) return false;
         for (const file of Array.from(files)) {
           if (file.type.startsWith('image/')) {
+            // Answers don't support images: swallow dropped image files.
             event.preventDefault();
-            const reader = new FileReader();
-            reader.onload = (e) => {
-              const src = e.target?.result as string;
-              editor?.chain().focus().setImage({ src }).run();
-            };
-            reader.readAsDataURL(file);
             return true;
           }
         }
@@ -305,10 +251,27 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
     editor.commands.setContent(value ?? '', { emitUpdate: false });
   }, [editor, value]);
 
-  const insertInlineMath = useCallback(() => {
+  // Render the current selection as math. `$$…$$` becomes a block formula,
+  // `$…$` (or a bare selection) an inline one. With no selection, prompt for a
+  // new inline formula. This is the ONLY path that turns text into math, so
+  // pasted `$…$` stays literal until the user opts in here.
+  const applyMath = useCallback(() => {
     if (!editor) return;
-    const latex = window.prompt('Formula (LaTeX):', '');
-    if (latex) editor.chain().focus().insertInlineMath({ latex }).run();
+    const { from, to } = editor.state.selection;
+    if (from === to) {
+      const latex = window.prompt('Formula (LaTeX):', '');
+      if (latex) editor.chain().focus().insertInlineMath({ latex }).run();
+      return;
+    }
+    const selected = editor.state.doc.textBetween(from, to, '\n').trim();
+    const block = /^\$\$([\s\S]+)\$\$$/.exec(selected);
+    if (block) {
+      editor.chain().focus().deleteSelection().insertBlockMath({ latex: block[1].trim() }).run();
+      return;
+    }
+    const inline = /^\$([^\n]+)\$$/.exec(selected);
+    const latex = (inline ? inline[1] : selected).trim();
+    editor.chain().focus().deleteSelection().insertInlineMath({ latex }).run();
   }, [editor]);
 
   if (!editor) return null;
@@ -369,7 +332,7 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
         >
           <LinkIcon size={15} />
         </ToolBtn>
-        <ToolBtn active={false} onClick={insertInlineMath} title="Insert formula">
+        <ToolBtn active={false} onClick={applyMath} title="Render selection as formula">
           <Sigma size={15} />
         </ToolBtn>
       </BubbleMenu>

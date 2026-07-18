@@ -224,6 +224,9 @@ textarea {
   padding: 0.85em 1em;
   overflow-x: auto;
   font-family: var(--font-mono);
+  white-space: pre;
+  font-variant-ligatures: none;
+  tab-size: 4;
 }
 .rich-editor .ProseMirror pre code {
   background: none;

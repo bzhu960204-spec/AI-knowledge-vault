@@ -12,7 +12,7 @@ import {
 import type { NoteRequest, QuestionImage } from '../api/types';
 import { useSelectionStore } from '../store/useSelectionStore';
 
-type SaveStatus = 'idle' | 'saving' | 'saved';
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 /** A locally-editable conversation turn. `id` is null until first persisted. */
 interface EditableSegment {
@@ -39,6 +39,139 @@ function htmlToPlainText(html: string): string {
     el.replaceWith(doc.createTextNode(block ? `$$${latex}$$` : `$${latex}$`));
   });
   return (doc.body.textContent ?? '').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/**
+ * Turn an answer's rich-text HTML into Markdown, preserving headings, emphasis,
+ * lists, code, links, images, blockquotes, tables and math so the copied text
+ * round-trips back through the editor's Markdown paste path.
+ */
+function htmlToMarkdown(html: string): string {
+  if (!html) return html;
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+
+  const inline = (node: Node): string => {
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+    const el = node as HTMLElement;
+
+    // TipTap math nodes keep their source in data-latex.
+    if (el.hasAttribute('data-latex')) {
+      const latex = el.getAttribute('data-latex') ?? '';
+      return el.getAttribute('data-type') === 'block-math'
+        ? `$$${latex}$$`
+        : `$${latex}$`;
+    }
+
+    const kids = Array.from(el.childNodes).map(inline).join('');
+    switch (el.tagName) {
+      case 'STRONG':
+      case 'B':
+        return `**${kids}**`;
+      case 'EM':
+      case 'I':
+        return `*${kids}*`;
+      case 'S':
+      case 'DEL':
+        return `~~${kids}~~`;
+      case 'CODE':
+        return `\`${kids}\``;
+      case 'BR':
+        return '  \n';
+      case 'A': {
+        const href = el.getAttribute('href') ?? '';
+        return href ? `[${kids}](${href})` : kids;
+      }
+      case 'IMG': {
+        const src = el.getAttribute('src') ?? '';
+        const alt = el.getAttribute('alt') ?? '';
+        return `![${alt}](${src})`;
+      }
+      default:
+        return kids;
+    }
+  };
+
+  const tableToMarkdown = (table: HTMLElement): string => {
+    const rows = Array.from(table.querySelectorAll('tr'));
+    if (rows.length === 0) return '';
+    const cells = (tr: Element) =>
+      Array.from(tr.querySelectorAll('th,td')).map((c) =>
+        inline(c as HTMLElement).trim(),
+      );
+    const header = cells(rows[0]);
+    const sep = header.map(() => '---');
+    const body = rows.slice(1).map(cells);
+    return [header, sep, ...body].map((r) => `| ${r.join(' | ')} |`).join('\n');
+  };
+
+  const block = (node: Node, depth = 0): string => {
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent?.trim() ?? '';
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+    const el = node as HTMLElement;
+
+    if (
+      el.hasAttribute('data-latex') &&
+      el.getAttribute('data-type') === 'block-math'
+    ) {
+      return `$$${el.getAttribute('data-latex') ?? ''}$$`;
+    }
+
+    switch (el.tagName) {
+      case 'H1':
+      case 'H2':
+      case 'H3':
+      case 'H4':
+      case 'H5':
+      case 'H6':
+        return `${'#'.repeat(Number(el.tagName[1]))} ${inline(el)}`;
+      case 'P':
+        return inline(el);
+      case 'BLOCKQUOTE':
+        return Array.from(el.children)
+          .map((c) => block(c, depth))
+          .join('\n\n')
+          .split('\n')
+          .map((l) => `> ${l}`)
+          .join('\n');
+      case 'PRE': {
+        const code = el.querySelector('code');
+        const lang = code?.className.match(/language-(\S+)/)?.[1] ?? '';
+        return `\`\`\`${lang}\n${code?.textContent ?? el.textContent ?? ''}\n\`\`\``;
+      }
+      case 'UL':
+      case 'OL':
+        return Array.from(el.children)
+          .map((li, i) => {
+            const marker = el.tagName === 'OL' ? `${i + 1}.` : '-';
+            const pad = '  '.repeat(depth);
+            const text = Array.from(li.childNodes)
+              .filter((n) => !/^(UL|OL)$/.test((n as HTMLElement).tagName ?? ''))
+              .map(inline)
+              .join('')
+              .trim();
+            const nested = Array.from(li.children)
+              .filter((c) => /^(UL|OL)$/.test(c.tagName))
+              .map((c) => '\n' + block(c, depth + 1))
+              .join('');
+            return `${pad}${marker} ${text}${nested}`;
+          })
+          .join('\n');
+      case 'HR':
+        return '---';
+      case 'TABLE':
+        return tableToMarkdown(el);
+      default:
+        return inline(el);
+    }
+  };
+
+  return Array.from(doc.body.childNodes)
+    .map((n) => block(n))
+    .filter((s) => s.trim() !== '')
+    .join('\n\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 const MODEL_OPTIONS = [
@@ -70,6 +203,7 @@ export function NoteEditor({ noteId }: Readonly<NoteEditorProps>) {
   const [segs, setSegs] = useState<EditableSegment[]>([]);
   const [status, setStatus] = useState<SaveStatus>('idle');
   const [copied, setCopied] = useState(false);
+  const [copyMenuOpen, setCopyMenuOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const copyTimer = useRef<number | undefined>(undefined);
@@ -145,6 +279,12 @@ export function NoteEditor({ noteId }: Readonly<NoteEditorProps>) {
           applySegs(reconciled);
         }
       },
+      onError: () => {
+        // Surface the failure instead of hanging on "Saving…" forever, and keep
+        // the payload so the next edit or note switch can retry it.
+        setStatus('error');
+        pendingSave.current = payload;
+      },
     });
   }, [updateNote, applySegs]);
 
@@ -209,13 +349,14 @@ export function NoteEditor({ noteId }: Readonly<NoteEditorProps>) {
     deleteNote.mutate(note.id, { onSuccess: () => selectNote(null) });
   }
 
-  // Copy the whole conversation as readable plain text (rich-text tags
-  // stripped) so it pastes cleanly into any app.
-  async function handleCopy() {
+  // Copy the whole conversation to the clipboard, either as Markdown (keeps
+  // headings, lists, code, math…) or as readable plain text (tags stripped).
+  async function handleCopy(format: 'markdown' | 'plain') {
+    const render = format === 'markdown' ? htmlToMarkdown : htmlToPlainText;
     const text = segsRef.current
       .map((s) => {
         const q = s.question.trim();
-        return (q ? `Q: ${q}\n\n` : '') + htmlToPlainText(s.answer);
+        return (q ? `Q: ${q}\n\n` : '') + render(s.answer);
       })
       .join('\n\n---\n\n')
       .trim();
@@ -232,6 +373,7 @@ export function NoteEditor({ noteId }: Readonly<NoteEditorProps>) {
       ta.remove();
     }
     setCopied(true);
+    setCopyMenuOpen(false);
     window.clearTimeout(copyTimer.current);
     copyTimer.current = window.setTimeout(() => setCopied(false), 1500);
   }
@@ -336,14 +478,42 @@ export function NoteEditor({ noteId }: Readonly<NoteEditorProps>) {
           />
           <div className="flex items-center gap-3">
             <SaveIndicator status={status} />
-            <button
-              type="button"
-              onClick={handleCopy}
-              title="Copy full note as Markdown"
-              className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted transition hover:border-accent hover:text-text"
-            >
-              {copied ? 'Copied' : 'Copy'}
-            </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setCopyMenuOpen((v) => !v)}
+                title="Copy full note"
+                className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted transition hover:border-accent hover:text-text"
+              >
+                {copied ? 'Copied' : 'Copy ▾'}
+              </button>
+              {copyMenuOpen && (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Close copy menu"
+                    className="fixed inset-0 z-10 cursor-default"
+                    onClick={() => setCopyMenuOpen(false)}
+                  />
+                  <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-lg border border-border bg-bg shadow-lg">
+                    <button
+                      type="button"
+                      onClick={() => handleCopy('plain')}
+                      className="block w-full px-3 py-2 text-left text-sm text-muted transition hover:bg-border/40 hover:text-text"
+                    >
+                      Copy as plain text
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy('markdown')}
+                      className="block w-full px-3 py-2 text-left text-sm text-muted transition hover:bg-border/40 hover:text-text"
+                    >
+                      Copy as Markdown
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
             <button
               type="button"
               onClick={() => setFullscreen((v) => !v)}
@@ -646,9 +816,12 @@ function SaveIndicator({ status }: Readonly<{ status: SaveStatus }>) {
     idle: '',
     saving: 'Saving…',
     saved: 'Saved',
+    error: 'Save failed — retrying on next edit',
   };
   if (!map[status]) return null;
-  return <span className="text-xs text-muted">{map[status]}</span>;
+  const className =
+    status === 'error' ? 'text-xs text-red-500' : 'text-xs text-muted';
+  return <span className={className}>{map[status]}</span>;
 }
 
 function ChatIcon() {

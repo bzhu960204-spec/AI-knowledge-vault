@@ -75,5 +75,6 @@ export interface ExportRequest {
   folderId?: number | null;
   includeSubfolders?: boolean;
   includeQuestion: boolean;
+  stripLinks?: boolean;
   title?: string;
 }

@@ -76,6 +76,19 @@ public class QuestionImageService {
         if (!segment.getNoteId().equals(noteId)) {
             throw new NotFoundException("Segment not found in note: " + segmentId);
         }
+        String filename = storeToDisk(file);
+
+        QuestionImage image = new QuestionImage();
+        image.setNoteId(noteId);
+        image.setSegmentId(segmentId);
+        image.setFilename(filename);
+        image.setOriginalName(file.getOriginalFilename());
+        image.setContentType(file.getContentType());
+        return toDto(imageRepository.save(image));
+    }
+
+    /** Validate an uploaded image and write it to the uploads dir; returns the filename. */
+    private String storeToDisk(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No file provided");
         }
@@ -98,14 +111,7 @@ public class QuestionImageService {
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to store upload", e);
         }
-
-        QuestionImage image = new QuestionImage();
-        image.setNoteId(noteId);
-        image.setSegmentId(segmentId);
-        image.setFilename(filename);
-        image.setOriginalName(file.getOriginalFilename());
-        image.setContentType(contentType);
-        return toDto(imageRepository.save(image));
+        return filename;
     }
 
     @Transactional

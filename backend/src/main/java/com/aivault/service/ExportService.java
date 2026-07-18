@@ -133,7 +133,7 @@ public class ExportService {
                     body.append(renderQuestionBlock(segment));
                 }
                 body.append("<div class=\"note-body\">");
-                body.append(renderAnswer(segment.getAnswerHtml()));
+                body.append(renderAnswer(segment.getAnswerHtml(), request.stripLinks()));
                 body.append(CLOSE_DIV);
             }
             body.append("</article>");
@@ -215,9 +215,16 @@ public class ExportService {
      * directly. Math arrives either as TipTap {@code data-latex} nodes or as
      * legacy {@code $…$} text; both are rendered client-side by KaTeX (see the
      * document template's {@code __renderMath}).
+     *
+     * <p>When {@code stripLinks} is set, citation-style anchors pasted from AI
+     * chat (e.g. {@code [[DEV] Mand…| Txt]}) are removed entirely so they don't
+     * clutter the exported document. Ordinary hyperlinks are left untouched.</p>
      */
-    private String renderAnswer(String html) {
-        return html == null ? "" : html;
+    private String renderAnswer(String html, boolean stripLinks) {
+        if (html == null) {
+            return "";
+        }
+        return stripLinks ? CITATION_LINK.matcher(html).replaceAll("") : html;
     }
 
     private String renderMarkdown(String markdown) {
@@ -235,6 +242,15 @@ public class ExportService {
 
     private static final String MATH_MARK = "\uE000";
     private static final String CLOSE_DIV = "</div>";
+    /**
+     * Matches citation-style anchors whose visible text looks like an AI-chat
+     * reference chip: wrapped in {@code [...]} and containing a {@code |}
+     * separator (e.g. {@code [$$ITX Mappin…9814676666 | PDF$$]}). Ordinary
+     * hyperlinks don't match, so they survive the strip.
+     */
+    private static final Pattern CITATION_LINK = Pattern.compile(
+            "<a\\b[^>]*>\\s*\\[[^<]*\\|[^<]*\\]\\s*</a>",
+            Pattern.CASE_INSENSITIVE);
     private static final Pattern BLOCK_MATH = Pattern.compile("\\$\\$(.+?)\\$\\$", Pattern.DOTALL);
     private static final Pattern INLINE_MATH = Pattern.compile("\\$([^$\\n]+?)\\$");
 
