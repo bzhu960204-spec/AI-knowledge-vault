@@ -119,9 +119,20 @@ public class ExportService {
                 : "Exported Notes";
 
         StringBuilder body = new StringBuilder();
+        List<TocEntry> tocEntries = new ArrayList<>();
+        int[] anchorSeq = {0};              // global counter keeps every anchor id unique
+        boolean multi = notes.size() > 1;
+
         for (Note note : notes) {
-            body.append("<article class=\"note\">");
+            String noteAnchor = "sec-" + (++anchorSeq[0]);
+            body.append("<article class=\"note\" id=\"").append(noteAnchor).append("\">");
             body.append("<h1 class=\"note-title\">").append(escape(note.getTitle())).append("</h1>");
+
+            // Multi-note export: the note title is the top level of the tree TOC.
+            // Single-note export skips it so the TOC is just that note's headings.
+            if (multi) {
+                tocEntries.add(new TocEntry(0, noteAnchor, note.getTitle()));
+            }
 
             String meta = buildMeta(note);
             if (!meta.isEmpty()) {
@@ -133,16 +144,95 @@ public class ExportService {
                     body.append(renderQuestionBlock(segment));
                 }
                 body.append("<div class=\"note-body\">");
-                body.append(renderAnswer(segment.getAnswerHtml(), request.stripLinks()));
+                body.append(indexHeadings(
+                        renderAnswer(segment.getAnswerHtml(), request.stripLinks()), tocEntries, anchorSeq));
                 body.append(CLOSE_DIV);
             }
             body.append("</article>");
         }
 
+        String tocMarkup = tocEntries.isEmpty() ? "" :
+                "<input type=\"checkbox\" id=\"toc-toggle\" class=\"toc-toggle\" hidden />"
+              + "<label for=\"toc-toggle\" class=\"toc-fab\" title=\"目录\" aria-label=\"打开目录\">"
+              +   "<span class=\"toc-fab-icon\">\u2630</span></label>"
+              + "<label for=\"toc-toggle\" class=\"toc-backdrop\"></label>"
+              + "<aside class=\"toc-drawer\" aria-label=\"目录\">"
+              +   "<div class=\"toc-drawer-head\"><span class=\"toc-title\">目录</span>"
+              +     "<label for=\"toc-toggle\" class=\"toc-close\" title=\"关闭\" aria-label=\"关闭目录\">\u00d7</label></div>"
+              +   "<nav class=\"toc\">"
+              +   renderTocTree(tocEntries, new int[]{0}, -1, new int[]{0})
+              +   "</nav></aside>";
+
         return HTML_TEMPLATE
                 .replace("{{title}}", escape(docTitle))
                 .replace("{{style}}", STYLE)
+                .replace("{{toc}}", tocMarkup)
                 .replace("{{body}}", body.toString());
+    }
+
+    /**
+     * Injects a unique anchor {@code id} into every {@code <h1>–<h3>} in an
+     * answer body and records each heading in the shared table of contents.
+     * Empty headings are skipped so they don't create dead TOC entries.
+     */
+    private String indexHeadings(String html, List<TocEntry> tocEntries, int[] anchorSeq) {
+        Matcher m = HEADING.matcher(html);
+        StringBuilder out = new StringBuilder();
+        while (m.find()) {
+            int level = Integer.parseInt(m.group(1));
+            String attrs = m.group(2);
+            String inner = m.group(3);
+            String text = INNER_TAGS.matcher(inner).replaceAll("").trim();
+            if (text.isEmpty()) {
+                m.appendReplacement(out, Matcher.quoteReplacement(m.group()));
+                continue;
+            }
+            String anchor = "sec-" + (++anchorSeq[0]);
+            tocEntries.add(new TocEntry(level, anchor, text));
+            String replaced = "<h" + level + " id=\"" + anchor + "\"" + attrs + ">"
+                    + inner + "</h" + level + ">";
+            m.appendReplacement(out, Matcher.quoteReplacement(replaced));
+        }
+        m.appendTail(out);
+        return out.toString();
+    }
+
+    /**
+     * Renders the collected {@link TocEntry} list as a nested, collapsible tree.
+     * Any entry followed by deeper-level entries becomes a branch whose caret
+     * toggles its children (pure CSS, via a hidden checkbox).
+     */
+    private String renderTocTree(List<TocEntry> entries, int[] pos, int parentLevel, int[] branchSeq) {
+        StringBuilder sb = new StringBuilder("<ul>");
+        while (pos[0] < entries.size() && entries.get(pos[0]).level() > parentLevel) {
+            TocEntry e = entries.get(pos[0]);
+            int level = e.level();
+            pos[0]++;
+            boolean hasChildren = pos[0] < entries.size() && entries.get(pos[0]).level() > level;
+            sb.append("<li class=\"toc-l").append(level).append("\">");
+            if (hasChildren) {
+                String branchId = "br-" + (++branchSeq[0]);
+                sb.append("<input type=\"checkbox\" class=\"toc-branch\" id=\"").append(branchId)
+                  .append("\" checked hidden/>")
+                  .append("<div class=\"toc-row\">")
+                  .append("<label class=\"toc-caret\" for=\"").append(branchId).append("\"></label>")
+                  .append("<a href=\"#").append(e.anchor()).append("\">").append(escape(e.text())).append("</a>")
+                  .append("</div>");
+                sb.append(renderTocTree(entries, pos, level, branchSeq));
+            } else {
+                sb.append("<div class=\"toc-row\">")
+                  .append("<span class=\"toc-caret toc-caret-empty\"></span>")
+                  .append("<a href=\"#").append(e.anchor()).append("\">").append(escape(e.text())).append("</a>")
+                  .append("</div>");
+            }
+            sb.append("</li>");
+        }
+        sb.append("</ul>");
+        return sb.toString();
+    }
+
+    /** A single table-of-contents entry: its depth, anchor target and label. */
+    private record TocEntry(int level, String anchor, String text) {
     }
 
     /** The "Question" block: optional question text plus any inlined images. */
@@ -253,6 +343,12 @@ public class ExportService {
             Pattern.CASE_INSENSITIVE);
     private static final Pattern BLOCK_MATH = Pattern.compile("\\$\\$(.+?)\\$\\$", Pattern.DOTALL);
     private static final Pattern INLINE_MATH = Pattern.compile("\\$([^$\\n]+?)\\$");
+    /** Answer-body headings that feed the table of contents. */
+    private static final Pattern HEADING = Pattern.compile(
+            "<h([1-3])\\b([^>]*)>(.*?)</h\\1>",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    /** Strips inline markup so a heading yields plain text for the TOC. */
+    private static final Pattern INNER_TAGS = Pattern.compile("<[^>]+>");
 
     private String protectMath(String markdown, List<String> blocks, List<String> inlines) {
         Matcher blockMatcher = BLOCK_MATH.matcher(markdown);
@@ -352,9 +448,19 @@ public class ExportService {
             <style>{{style}}</style>
             </head>
             <body>
+            {{toc}}
             <main class="export-root">
             {{body}}
             </main>
+            <script>
+              (function () {
+                var toggle = document.getElementById('toc-toggle');
+                if (!toggle) return;
+                document.querySelectorAll('.toc a').forEach(function (a) {
+                  a.addEventListener('click', function () { toggle.checked = false; });
+                });
+              })();
+            </script>
             </body>
             </html>
             """;
@@ -370,6 +476,78 @@ public class ExportService {
               background: #fff;
             }
             .export-root { max-width: 820px; margin: 0 auto; padding: 40px 32px; }
+            .toc-toggle { position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none; }
+            .toc-fab {
+              position: fixed; top: 20px; left: 20px; z-index: 50;
+              width: 46px; height: 46px; border-radius: 12px;
+              display: flex; align-items: center; justify-content: center;
+              background: #1f2328; color: #fff; cursor: pointer;
+              box-shadow: 0 6px 18px rgba(16, 24, 40, 0.22);
+              transition: opacity .2s ease, transform .2s ease, background .2s ease;
+            }
+            .toc-fab:hover { transform: translateY(-1px); background: #2d333b; }
+            .toc-fab-icon { font-size: 19px; line-height: 1; }
+            .toc-backdrop {
+              position: fixed; inset: 0; z-index: 60;
+              background: rgba(16, 24, 40, 0.38);
+              opacity: 0; visibility: hidden;
+              transition: opacity .25s ease, visibility .25s ease; cursor: pointer;
+            }
+            .toc-drawer {
+              position: fixed; top: 0; left: 0; bottom: 0; z-index: 70;
+              width: 308px; max-width: 84vw;
+              display: flex; flex-direction: column;
+              background: #fff; border-right: 1px solid #e2e6ea;
+              box-shadow: 0 0 48px rgba(16, 24, 40, 0.20);
+              transform: translateX(-100%);
+              transition: transform .28s cubic-bezier(.4, 0, .2, 1);
+            }
+            .toc-drawer-head {
+              flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+              padding: 18px 20px; border-bottom: 1px solid #eef0f2;
+            }
+            .toc-close {
+              width: 30px; height: 30px; border-radius: 8px;
+              display: flex; align-items: center; justify-content: center;
+              font-size: 22px; line-height: 1; color: #6b7280; cursor: pointer;
+              transition: background .15s ease, color .15s ease;
+            }
+            .toc-close:hover { background: #f1f3f5; color: #1f2328; }
+            .toc-toggle:checked ~ .toc-drawer { transform: translateX(0); }
+            .toc-toggle:checked ~ .toc-backdrop { opacity: 1; visibility: visible; }
+            .toc-toggle:checked ~ .toc-fab { opacity: 0; pointer-events: none; transform: scale(.9); }
+            .toc { flex: 1 1 auto; overflow-y: auto; padding: 14px 12px 28px; }
+            .toc-title { font-size: 1rem; font-weight: 700; margin: 0; color: #1f2328; }
+            .toc ul { list-style: none; margin: 0; padding: 0; }
+            .toc li > ul { padding-left: 14px; }
+            .toc li { margin: 1px 0; line-height: 1.5; }
+            .toc-row { display: flex; align-items: flex-start; }
+            .toc-caret {
+              flex: 0 0 auto; width: 18px; height: 26px;
+              display: inline-flex; align-items: center; justify-content: center;
+              cursor: pointer; user-select: none;
+            }
+            .toc-caret::before {
+              content: ''; width: 0; height: 0;
+              border-left: 5px solid #8a94a6;
+              border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+              transform: rotate(90deg); transition: transform .15s ease;
+            }
+            .toc-caret:hover::before { border-left-color: #1f2328; }
+            .toc-caret-empty { cursor: default; }
+            .toc-caret-empty::before { display: none; }
+            .toc-branch:not(:checked) ~ .toc-row .toc-caret::before { transform: rotate(0deg); }
+            .toc-branch:not(:checked) ~ ul { display: none; }
+            .toc a {
+              flex: 1 1 auto; display: block; padding: 3px 8px; border-radius: 6px;
+              color: #1d4ed8; text-decoration: none; font-size: 0.9rem;
+              transition: background .15s ease; word-break: break-word;
+            }
+            .toc a:hover { background: #f1f5ff; }
+            .toc-l0 > .toc-row > a { font-weight: 700; }
+            .toc-l1 > .toc-row > a { font-weight: 600; }
+            .toc-l2 > .toc-row > a { font-size: 0.85rem; color: #2a4bb8; }
+            .toc-l3 > .toc-row > a { font-size: 0.82rem; color: #4a5a8a; }
             .note { padding-bottom: 8px; }
             .note + .note { border-top: 1px solid #e5e5e5; margin-top: 40px; padding-top: 32px; }
             .note-title { font-size: 1.8rem; font-weight: 700; margin: 0 0 8px; }
@@ -435,6 +613,7 @@ public class ExportService {
             .katex-display { margin: 0.8em 0; overflow-x: auto; overflow-y: hidden; }
             @media print {
               .export-root { max-width: none; padding: 0; }
+              .toc-toggle, .toc-fab, .toc-backdrop, .toc-drawer { display: none !important; }
               .note { page-break-inside: auto; }
               .note + .note { page-break-before: always; border-top: none; margin-top: 0; padding-top: 0; }
               pre, blockquote, table { page-break-inside: avoid; }
