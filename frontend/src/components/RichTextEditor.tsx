@@ -94,12 +94,23 @@ function hasFencedCode(text: string): boolean {
  * left as plain text (the user renders it to math manually via the toolbar).
  */
 function renderMarkdown(md: string): string {
+  // Protect fenced code blocks before math-shielding. Otherwise a literal
+  // `$$$` (or any `$$`) inside a code block would be swallowed by the `$$…$$`
+  // math regex below, which then greedily consumes the block's closing fence
+  // and everything up to the next dollar sign — leaking the code block into the
+  // following content.
+  const fences: string[] = [];
+  const withoutFences = md.replace(FENCE_RE, (m) => `\u0000F${fences.push(m) - 1}\u0000`);
+
   const math: string[] = [];
   const stash = (m: string) => `\u0000M${math.push(m) - 1}\u0000`;
-  const shielded = md
+  const shielded = withoutFences
     .replace(/\$\$[\s\S]+?\$\$/g, stash)
     .replace(/\$(?!\d+\$)[^\n]+?\$(?!\d)/g, stash);
-  const html = marked.parse(shielded, { gfm: true, breaks: false, async: false }) as string;
+
+  // Restore the code fences so `marked` renders them as real code blocks.
+  const restored = shielded.replace(/\u0000F(\d+)\u0000/g, (_, i) => fences[Number(i)]);
+  const html = marked.parse(restored, { gfm: true, breaks: false, async: false }) as string;
   return html.replace(/\u0000M(\d+)\u0000/g, (_, i) => math[Number(i)]);
 }
 

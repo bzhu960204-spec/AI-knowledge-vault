@@ -27,8 +27,10 @@ import java.util.regex.Pattern;
 public class MarkdownHtmlConverter {
 
     private static final String MATH_MARK = "\uE000";
+    private static final String FENCE_MARK = "\uE001";
     private static final Pattern BLOCK_MATH = Pattern.compile("\\$\\$(.+?)\\$\\$", Pattern.DOTALL);
     private static final Pattern INLINE_MATH = Pattern.compile("\\$([^$\\n]+?)\\$");
+    private static final Pattern CODE_FENCE = Pattern.compile("```[^\\n]*\\n.*?\\n?```", Pattern.DOTALL);
 
     private final Parser parser;
     private final HtmlRenderer renderer;
@@ -51,9 +53,37 @@ public class MarkdownHtmlConverter {
         }
         List<String> blocks = new ArrayList<>();
         List<String> inlines = new ArrayList<>();
-        String protectedMd = protectMath(markdown, blocks, inlines);
-        String html = renderer.render(parser.parse(protectedMd));
+        List<String> fences = new ArrayList<>();
+        // Shield fenced code blocks first, so a literal `$$` / `$$$` inside a
+        // code block can't be swallowed by the math regexes (which would then
+        // consume the block's closing fence and leak into later content).
+        String withoutFences = protectFences(markdown, fences);
+        String protectedMd = protectMath(withoutFences, blocks, inlines);
+        String restoredMd = restoreFences(protectedMd, fences);
+        String html = renderer.render(parser.parse(restoredMd));
         return restoreMath(html, blocks, inlines);
+    }
+
+    private String protectFences(String markdown, List<String> fences) {
+        Matcher matcher = CODE_FENCE.matcher(markdown);
+        StringBuilder result = new StringBuilder();
+        while (matcher.find()) {
+            int index = fences.size();
+            fences.add(matcher.group());
+            matcher.appendReplacement(result,
+                    Matcher.quoteReplacement(FENCE_MARK + "CF" + index + FENCE_MARK));
+        }
+        matcher.appendTail(result);
+        return result.toString();
+    }
+
+    private String restoreFences(String markdown, List<String> fences) {
+        String result = markdown;
+        for (int i = 0; i < fences.size(); i++) {
+            String token = FENCE_MARK + "CF" + i + FENCE_MARK;
+            result = result.replace(token, fences.get(i));
+        }
+        return result;
     }
 
     private String protectMath(String markdown, List<String> blocks, List<String> inlines) {

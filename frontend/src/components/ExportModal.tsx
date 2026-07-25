@@ -135,14 +135,8 @@ export function ExportModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-md overflow-hidden rounded-xl border border-border bg-surface shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="w-full max-w-md overflow-hidden rounded-xl border border-border bg-surface shadow-2xl">
         <div className="border-b border-border px-5 py-4">
           <h2 className="text-base font-semibold text-text">Export notes</h2>
           <p className="mt-0.5 text-xs text-muted">
