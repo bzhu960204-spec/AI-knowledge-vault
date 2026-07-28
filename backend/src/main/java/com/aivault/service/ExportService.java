@@ -267,23 +267,50 @@ public class ExportService {
         return String.join(" · ", parts);
     }
 
-    /** Render every question image inline as a self-contained base64 data URI. */
+    /**
+     * Render a segment's question attachments. Images are inlined as
+     * self-contained base64 data URIs; every other attachment is represented by
+     * a small text marker (its file name) so the export shows that the question
+     * had an attachment without embedding the file itself.
+     */
     private String renderQuestionImages(Long segmentId) {
         List<QuestionImage> images = questionImageRepository.findBySegmentIdOrderByCreatedAtAsc(segmentId);
         if (images.isEmpty()) {
             return "";
         }
-        StringBuilder sb = new StringBuilder("<div class=\"note-question-images\">");
+        StringBuilder inlineImages = new StringBuilder();
+        StringBuilder fileMarkers = new StringBuilder();
         for (QuestionImage image : images) {
-            String dataUri = toDataUri(image);
-            if (dataUri == null) {
-                continue;
+            if (isImage(image)) {
+                String dataUri = toDataUri(image);
+                if (dataUri == null) {
+                    continue;
+                }
+                String alt = image.getOriginalName() != null ? escape(image.getOriginalName()) : "";
+                inlineImages.append("<img src=\"").append(dataUri)
+                        .append("\" alt=\"").append(alt).append("\"/>");
+            } else {
+                String name = image.getOriginalName() != null && !image.getOriginalName().isBlank()
+                        ? escape(image.getOriginalName())
+                        : "attachment";
+                fileMarkers.append("<span class=\"note-question-attachment\">\uD83D\uDCCE ")
+                        .append(name).append("</span>");
             }
-            String alt = image.getOriginalName() != null ? escape(image.getOriginalName()) : "";
-            sb.append("<img src=\"").append(dataUri).append("\" alt=\"").append(alt).append("\"/>");
         }
-        sb.append(CLOSE_DIV);
+        StringBuilder sb = new StringBuilder();
+        if (inlineImages.length() > 0) {
+            sb.append("<div class=\"note-question-images\">").append(inlineImages).append(CLOSE_DIV);
+        }
+        if (fileMarkers.length() > 0) {
+            sb.append("<div class=\"note-question-attachments\">").append(fileMarkers).append(CLOSE_DIV);
+        }
         return sb.toString();
+    }
+
+    /** An attachment counts as an image only when its content type says so. */
+    private boolean isImage(QuestionImage image) {
+        String contentType = image.getContentType();
+        return contentType != null && contentType.startsWith("image/");
     }
 
     private String toDataUri(QuestionImage image) {
@@ -579,6 +606,23 @@ public class ExportService {
               max-height: 240px;
               border: 1px solid #d7d9ff;
               border-radius: 6px;
+            }
+            .note-question-attachments {
+              display: flex;
+              flex-wrap: wrap;
+              gap: 8px;
+              margin-top: 10px;
+            }
+            .note-question-attachment {
+              display: inline-flex;
+              align-items: center;
+              gap: 4px;
+              font-size: 0.85rem;
+              color: #4a4d80;
+              background: #eef0ff;
+              border: 1px solid #d7d9ff;
+              border-radius: 6px;
+              padding: 3px 10px;
             }
             .note-body h1, .note-body h2, .note-body h3 { line-height: 1.3; margin: 1.4em 0 0.6em; }
             .note-body p { margin: 0.8em 0; }

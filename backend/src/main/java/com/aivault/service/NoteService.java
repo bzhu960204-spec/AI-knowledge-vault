@@ -99,9 +99,21 @@ public class NoteService {
     public NoteDto create(NoteRequest request) {
         Note note = new Note();
         applyMetadata(note, request);
+        note.setSortOrder(nextSortOrder(note.getFolderId()));
         Note saved = noteRepository.save(note);
         applySegments(saved.getId(), request.segments());
         return toDto(saved);
+    }
+
+    /** Next sort order to place a new note at the bottom of its folder. */
+    private int nextSortOrder(Long folderId) {
+        List<Note> siblings = (folderId == null)
+                ? noteRepository.findByFolderIdIsNullOrderBySortOrderAscCreatedAtDesc()
+                : noteRepository.findByFolderIdOrderBySortOrderAscCreatedAtDesc(folderId);
+        return siblings.stream()
+                .mapToInt(Note::getSortOrder)
+                .max()
+                .orElse(-1) + 1;
     }
 
     @Transactional

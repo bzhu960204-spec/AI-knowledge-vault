@@ -5,6 +5,8 @@ import type { ExportFormat } from '../api/types';
 interface ExportModalProps {
   open: boolean;
   onClose: () => void;
+  /** Called after a successful export, in addition to onClose. */
+  onExported?: () => void;
   /** Ordered note ids to export. Empty means "whole folder". */
   noteIds: number[];
   folderId?: number | null;
@@ -84,6 +86,7 @@ function sanitizeFilename(name: string): string {
 export function ExportModal({
   open,
   onClose,
+  onExported,
   noteIds,
   folderId,
   includeSubfolders,
@@ -125,6 +128,7 @@ export function ExportModal({
         triggerPrint(html, sanitizeFilename(title));
       }
       onClose();
+      onExported?.();
     } catch (e) {
       setError(
         e instanceof Error ? e.message : 'Export failed, please try again.',

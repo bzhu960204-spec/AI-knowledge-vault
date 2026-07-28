@@ -232,6 +232,7 @@ export function NoteList({
       <ExportModal
         open={exportOpen}
         onClose={() => setExportOpen(false)}
+        onExported={() => setExportMode(false)}
         noteIds={orderedCheckedIds}
         totalCount={orderedCheckedIds.length}
         defaultTitle={

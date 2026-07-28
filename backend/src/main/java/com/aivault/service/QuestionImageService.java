@@ -31,13 +31,20 @@ import java.util.UUID;
 @Service
 public class QuestionImageService {
 
-    /** Allowed image content types mapped to the extension used on disk. */
-    private static final Map<String, String> ALLOWED_TYPES = Map.of(
+    /** Image content types mapped to the extension used on disk. */
+    private static final Map<String, String> IMAGE_TYPES = Map.of(
             "image/png", ".png",
             "image/jpeg", ".jpg",
             "image/gif", ".gif",
             "image/webp", ".webp"
     );
+
+    /** Upper bound for any single attachment (25 MB). */
+    private static final long MAX_UPLOAD_BYTES = 25L * 1024 * 1024;
+
+    /** Extension characters we allow to survive from an original file name. */
+    private static final java.util.regex.Pattern SAFE_EXTENSION =
+            java.util.regex.Pattern.compile("\\.[A-Za-z0-9]{1,10}$");
 
     private final QuestionImageRepository imageRepository;
     private final NoteSegmentRepository segmentRepository;
@@ -87,18 +94,17 @@ public class QuestionImageService {
         return toDto(imageRepository.save(image));
     }
 
-    /** Validate an uploaded image and write it to the uploads dir; returns the filename. */
+    /** Validate an uploaded file and write it to the uploads dir; returns the filename. */
     private String storeToDisk(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No file provided");
         }
-        String contentType = file.getContentType();
-        String extension = ALLOWED_TYPES.get(contentType);
-        if (extension == null) {
+        if (file.getSize() > MAX_UPLOAD_BYTES) {
             throw new ResponseStatusException(
-                    HttpStatus.UNSUPPORTED_MEDIA_TYPE,
-                    "Unsupported image type: " + contentType);
+                    HttpStatus.PAYLOAD_TOO_LARGE,
+                    "Attachment exceeds the 25 MB limit");
         }
+        String extension = resolveExtension(file);
 
         String filename = UUID.randomUUID().toString().replace("-", "") + extension;
         Path target = uploadDir.resolve(filename).normalize();
@@ -112,6 +118,27 @@ public class QuestionImageService {
             throw new UncheckedIOException("Failed to store upload", e);
         }
         return filename;
+    }
+
+    /**
+     * Pick a safe on-disk extension. Images use their known type; any other
+     * attachment keeps the (sanitized) extension from its original file name so
+     * it downloads with a sensible type. Files with no usable extension are
+     * stored without one.
+     */
+    private String resolveExtension(MultipartFile file) {
+        String imageExt = IMAGE_TYPES.get(file.getContentType());
+        if (imageExt != null) {
+            return imageExt;
+        }
+        String original = file.getOriginalFilename();
+        if (original != null) {
+            var matcher = SAFE_EXTENSION.matcher(original);
+            if (matcher.find()) {
+                return matcher.group().toLowerCase();
+            }
+        }
+        return "";
     }
 
     @Transactional
@@ -157,7 +184,8 @@ public class QuestionImageService {
         return new QuestionImageDto(
                 image.getId(),
                 "/uploads/" + image.getFilename(),
-                image.getOriginalName()
+                image.getOriginalName(),
+                image.getContentType()
         );
     }
 }

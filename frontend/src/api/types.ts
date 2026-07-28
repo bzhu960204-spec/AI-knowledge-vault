@@ -28,6 +28,7 @@ export interface QuestionImage {
   id: number;
   url: string;
   originalName?: string | null;
+  contentType?: string | null;
 }
 
 export interface NoteSegment {

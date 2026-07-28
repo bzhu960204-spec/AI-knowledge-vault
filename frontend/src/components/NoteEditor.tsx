@@ -420,14 +420,13 @@ export function NoteEditor({ noteId }: Readonly<NoteEditorProps>) {
 
   function uploadForSegment(seg: EditableSegment, files: File[]) {
     if (!note) return;
-    const images = files.filter((f) => f.type.startsWith('image/'));
-    if (images.length === 0) return;
+    if (files.length === 0) return;
     if (seg.id == null) {
       // Not persisted yet — save first so we have a segment id, then retry.
       saveNow();
       return;
     }
-    for (const file of images) {
+    for (const file of files) {
       uploadImage.mutate({ noteId: note.id, segmentId: seg.id, file });
     }
   }
@@ -676,7 +675,7 @@ function SegmentBlock({
 
   function handleImageDrop(e: React.DragEvent) {
     const files = Array.from(e.dataTransfer.files);
-    if (files.some((f) => f.type.startsWith('image/'))) {
+    if (files.length > 0) {
       e.preventDefault();
       onUploadFiles(files);
     }
@@ -698,7 +697,7 @@ function SegmentBlock({
               <button
                 type="button"
                 onClick={() => imageInputRef.current?.click()}
-                title="Add image"
+                title="Add attachment"
                 className="rounded px-1 text-muted transition hover:text-text"
               >
                 <ImageIcon />
@@ -751,44 +750,72 @@ function SegmentBlock({
               autoSizeQuestion();
               onScheduleSave();
             }}
-            placeholder="What did you ask the AI? (paste or drop screenshots too)"
+            placeholder="What did you ask the AI? (paste or drop screenshots and files too)"
             className="w-full resize-none overflow-hidden bg-transparent text-sm leading-relaxed text-text outline-none placeholder:text-muted"
           />
           {images.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">
-              {images.map((img) => (
-                <div
-                  key={img.id}
-                  className="group relative h-20 w-20 overflow-hidden rounded-lg border border-border"
-                >
-                  <button
-                    type="button"
-                    onClick={() => onPreview(img.url)}
-                    title="Preview"
-                    className="block h-full w-full cursor-zoom-in"
+              {images.map((img) =>
+                isImageAttachment(img) ? (
+                  <div
+                    key={img.id}
+                    className="group relative h-20 w-20 overflow-hidden rounded-lg border border-border"
                   >
-                    <img
-                      src={img.url}
-                      alt={img.originalName ?? 'screenshot'}
-                      className="h-full w-full object-cover"
-                    />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onDeleteImage(img.id)}
-                    title="Remove image"
-                    className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-xs text-white opacity-0 transition group-hover:opacity-100"
+                    <button
+                      type="button"
+                      onClick={() => onPreview(img.url)}
+                      title="Preview"
+                      className="block h-full w-full cursor-zoom-in"
+                    >
+                      <img
+                        src={img.url}
+                        alt={img.originalName ?? 'screenshot'}
+                        className="h-full w-full object-cover"
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteImage(img.id)}
+                      title="Remove attachment"
+                      className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-xs text-white opacity-0 transition group-hover:opacity-100"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    key={img.id}
+                    className="group relative flex max-w-[12rem] items-center gap-2 rounded-lg border border-border bg-surface-2 py-2 pl-2.5 pr-7"
                   >
-                    ×
-                  </button>
-                </div>
-              ))}
+                    <a
+                      href={img.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      download={img.originalName ?? undefined}
+                      title={img.originalName ?? 'Download attachment'}
+                      className="flex min-w-0 items-center gap-2 text-sm text-text"
+                    >
+                      <PaperclipIcon />
+                      <span className="truncate">
+                        {img.originalName ?? 'attachment'}
+                      </span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteImage(img.id)}
+                      title="Remove attachment"
+                      className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/40 text-xs text-white opacity-0 transition group-hover:opacity-100"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ),
+              )}
             </div>
           )}
           <input
             ref={imageInputRef}
             type="file"
-            accept="image/*"
             multiple
             className="hidden"
             onChange={(e) => {
@@ -858,6 +885,32 @@ function ImageIcon() {
       <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
       <circle cx="8.5" cy="8.5" r="1.5" />
       <path d="M21 15l-5-5L5 21" />
+    </svg>
+  );
+}
+
+/** Whether a question attachment should render as an inline image thumbnail. */
+function isImageAttachment(img: QuestionImage): boolean {
+  if (img.contentType) return img.contentType.startsWith('image/');
+  // Legacy rows may lack a content type; fall back to the file extension.
+  return /\.(png|jpe?g|gif|webp)$/i.test(img.url);
+}
+
+function PaperclipIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className="shrink-0"
+    >
+      <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
     </svg>
   );
 }
