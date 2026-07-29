@@ -7,6 +7,8 @@ import type {
   NoteRequest,
   NoteSummary,
   QuestionImage,
+  SearchParams,
+  SearchResult,
 } from './types';
 
 export const foldersApi = {
@@ -31,9 +33,18 @@ export const notesApi = {
         },
       })
       .then((r) => r.data),
-  search: (q: string) =>
+  search: (params: SearchParams) =>
     api
-      .get<NoteSummary[]>('/notes/search', { params: { q } })
+      .get<SearchResult[]>('/notes/search', {
+        params: {
+          q: params.q,
+          folderId: params.folderId ?? undefined,
+          includeSubfolders: params.includeSubfolders ? true : undefined,
+          tag: params.tag ?? undefined,
+          field: params.field && params.field !== 'all' ? params.field : undefined,
+          sort: params.sort && params.sort !== 'relevance' ? params.sort : undefined,
+        },
+      })
       .then((r) => r.data),
   get: (id: number) => api.get<Note>(`/notes/${id}`).then((r) => r.data),
   create: (body: NoteRequest) =>

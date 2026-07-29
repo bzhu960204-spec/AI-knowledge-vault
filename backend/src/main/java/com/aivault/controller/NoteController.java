@@ -7,6 +7,7 @@ import com.aivault.dto.NoteRequest;
 import com.aivault.dto.NoteSummaryDto;
 import com.aivault.dto.QuestionImageDto;
 import com.aivault.dto.ReorderNotesRequest;
+import com.aivault.dto.SearchResultDto;
 import com.aivault.service.ExportService;
 import com.aivault.service.NoteService;
 import com.aivault.service.QuestionImageService;
@@ -55,8 +56,15 @@ public class NoteController {
     }
 
     @GetMapping("/search")
-    public List<NoteSummaryDto> search(@RequestParam("q") String query) {
-        return noteService.search(query);
+    public List<SearchResultDto> search(
+            @RequestParam("q") String query,
+            @RequestParam(required = false) Long folderId,
+            @RequestParam(required = false, defaultValue = "false") boolean includeSubfolders,
+            @RequestParam(required = false) String tag,
+            @RequestParam(required = false, defaultValue = "all") String field,
+            @RequestParam(required = false, defaultValue = "relevance") String sort
+    ) {
+        return noteService.search(query, folderId, includeSubfolders, tag, field, sort);
     }
 
     @GetMapping("/{id}")

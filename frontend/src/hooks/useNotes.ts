@@ -4,7 +4,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { notesApi, tagsApi } from '../api/endpoints';
-import type { NoteRequest, NoteSummary } from '../api/types';
+import type { NoteRequest, NoteSummary, SearchParams } from '../api/types';
 
 export function useNotes(params: { folderId?: number | null; tag?: string; includeSubfolders?: boolean }) {
   return useQuery({
@@ -13,11 +13,11 @@ export function useNotes(params: { folderId?: number | null; tag?: string; inclu
   });
 }
 
-export function useSearchNotes(query: string) {
+export function useSearchNotes(params: SearchParams) {
   return useQuery({
-    queryKey: ['notes', 'search', query],
-    queryFn: () => notesApi.search(query),
-    enabled: query.trim().length > 0,
+    queryKey: ['notes', 'search', params],
+    queryFn: () => notesApi.search(params),
+    enabled: params.q.trim().length > 0,
   });
 }
 

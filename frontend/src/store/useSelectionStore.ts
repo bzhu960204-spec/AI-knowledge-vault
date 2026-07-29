@@ -30,6 +30,8 @@ interface SelectionState {
   folderDropRootEnd: boolean;
   selectFolder: (id: number | null) => void;
   selectNote: (id: number | null) => void;
+  /** Jump to a note and switch the active folder to the one that contains it. */
+  revealNote: (noteId: number, folderId: number | null) => void;
   selectTag: (tag: string | null) => void;
   setIncludeSubfolders: (value: boolean) => void;
   setExportMode: (value: boolean) => void;
@@ -65,6 +67,15 @@ export const useSelectionStore = create<SelectionState>((set) => ({
       checkedNoteIds: [],
     }),
   selectNote: (id) => set({ selectedNoteId: id }),
+  revealNote: (noteId, folderId) =>
+    set({
+      selectedFolderId: folderId,
+      selectedNoteId: noteId,
+      activeTag: null,
+      includeSubfolders: false,
+      exportMode: false,
+      checkedNoteIds: [],
+    }),
   selectTag: (tag) =>
     set({
       activeTag: tag,

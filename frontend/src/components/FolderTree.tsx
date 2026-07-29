@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   useDraggable,
   useDroppable,
@@ -27,6 +27,34 @@ export function FolderTree({
 
   const tree = useMemo(() => buildFolderTree(folders), [folders]);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+
+  // Reveal the selected folder in the tree by expanding all of its ancestors.
+  // This runs whenever the selection changes, e.g. after jumping from a search
+  // result to the folder that contains the opened note.
+  useEffect(() => {
+    if (selectedFolderId == null) return;
+    const byId = new Map(folders.map((f) => [f.id, f]));
+    const ancestors: number[] = [];
+    const seen = new Set<number>();
+    let current = byId.get(selectedFolderId);
+    while (current && current.parentId != null && !seen.has(current.parentId)) {
+      seen.add(current.parentId);
+      ancestors.push(current.parentId);
+      current = byId.get(current.parentId);
+    }
+    if (ancestors.length === 0) return;
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      ancestors.forEach((id) => {
+        if (!next.has(id)) {
+          next.add(id);
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [selectedFolderId, folders]);
 
   function toggle(id: number) {
     setExpanded((prev) => {

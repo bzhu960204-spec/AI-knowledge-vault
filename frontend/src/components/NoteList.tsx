@@ -5,7 +5,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useCreateNote, useNotes } from '../hooks/useNotes';
+import { useCreateNote, useNotes, useDeleteNote } from '../hooks/useNotes';
 import { useSelectionStore } from '../store/useSelectionStore';
 import type { ListDensity } from '../store/useSelectionStore';
 import type { NoteSummary } from '../api/types';
@@ -222,6 +222,9 @@ export function NoteList({
                   exportMode={exportMode}
                   checked={checkedSet.has(note.id)}
                   onToggleChecked={() => toggleChecked(note.id)}
+                  onDeleted={(id) => {
+                    if (selectedNoteId === id) selectNote(null);
+                  }}
                 />
               ))}
             </SortableContext>
@@ -252,6 +255,7 @@ function NoteItem({
   exportMode,
   checked,
   onToggleChecked,
+  onDeleted,
 }: {
   note: NoteSummary;
   density: ListDensity;
@@ -260,10 +264,25 @@ function NoteItem({
   exportMode: boolean;
   checked: boolean;
   onToggleChecked: () => void;
+  onDeleted: (id: number) => void;
 }) {
   const compact = density === 'compact';
   // In compact mode only the selected row expands to reveal its preview/tags.
   const showDetails = !compact || (selected && !exportMode);
+  const deleteNote = useDeleteNote();
+
+  function handleDelete(e: React.MouseEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+    if (
+      !window.confirm(
+        `Delete "${note.title || 'Untitled'}"? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    deleteNote.mutate(note.id, { onSuccess: () => onDeleted(note.id) });
+  }
 
   const { setNodeRef, listeners, attributes, isDragging, transform, transition } =
     useSortable({
@@ -281,6 +300,7 @@ function NoteItem({
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
+      className="group relative"
     >
       <button
         type="button"
@@ -335,6 +355,19 @@ function NoteItem({
           )}
         </span>
       </button>
+
+      {!exportMode && (
+        <button
+          type="button"
+          onClick={handleDelete}
+          disabled={deleteNote.isPending}
+          title="Delete this note"
+          aria-label="Delete note"
+          className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-md text-muted opacity-0 transition hover:bg-surface hover:text-red-500 focus:opacity-100 group-hover:opacity-100 disabled:opacity-50"
+        >
+          🗑
+        </button>
+      )}
     </li>
   );
 }

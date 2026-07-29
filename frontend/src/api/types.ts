@@ -24,6 +24,32 @@ export interface NoteSummary {
   sortOrder: number;
 }
 
+export type SearchField = 'all' | 'title' | 'question' | 'answer';
+export type SearchSort = 'relevance' | 'updated';
+
+export interface SearchParams {
+  q: string;
+  folderId?: number | null;
+  includeSubfolders?: boolean;
+  tag?: string | null;
+  field?: SearchField;
+  sort?: SearchSort;
+}
+
+export interface SearchResult {
+  id: number;
+  title: string;
+  folderId: number | null;
+  folderPath: string | null;
+  sourceModel: string | null;
+  tags: string[];
+  snippet: string;
+  terms: string[];
+  matchFields: string[];
+  matchSegment: number | null;
+  updatedAt: string;
+}
+
 export interface QuestionImage {
   id: number;
   url: string;

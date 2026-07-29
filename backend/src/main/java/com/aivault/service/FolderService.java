@@ -36,9 +36,24 @@ public class FolderService {
     public FolderDto create(FolderRequest request) {
         Folder folder = new Folder();
         folder.setName(request.name().trim());
-        folder.setParentId(resolveParent(request.parentId(), null));
-        folder.setSortOrder(request.sortOrder() != null ? request.sortOrder() : 0);
+        Long parentId = resolveParent(request.parentId(), null);
+        folder.setParentId(parentId);
+        if (request.sortOrder() != null) {
+            folder.setSortOrder(request.sortOrder());
+        } else {
+            folder.setSortOrder(nextSortOrder(parentId));
+        }
         return toDto(folderRepository.save(folder));
+    }
+
+    private int nextSortOrder(Long parentId) {
+        List<Folder> siblings = (parentId == null)
+                ? folderRepository.findByParentIdIsNullOrderBySortOrderAscNameAsc()
+                : folderRepository.findByParentIdOrderBySortOrderAscNameAsc(parentId);
+        return siblings.stream()
+                .mapToInt(Folder::getSortOrder)
+                .max()
+                .orElse(-1) + 1;
     }
 
     @Transactional

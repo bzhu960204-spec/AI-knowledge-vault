@@ -9,6 +9,8 @@ public interface FolderRepository extends JpaRepository<Folder, Long> {
 
     List<Folder> findByParentIdOrderBySortOrderAscNameAsc(Long parentId);
 
+    List<Folder> findByParentIdIsNullOrderBySortOrderAscNameAsc();
+
     List<Folder> findAllByOrderBySortOrderAscNameAsc();
 
     boolean existsByParentId(Long parentId);
