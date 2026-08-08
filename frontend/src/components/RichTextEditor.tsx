@@ -285,6 +285,47 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
     editor.chain().focus().deleteSelection().insertInlineMath({ latex }).run();
   }, [editor]);
 
+  // Manually turn the current selection into ONE code block. TipTap's native
+  // toggle converts each selected paragraph into its own block; this instead
+  // merges every selected line into a single block (paragraph boundaries become
+  // newlines) — for pasted LLM diagrams that arrived as plain paragraphs with no
+  // Markdown fence. Toggling off splits the block's newlines back into separate
+  // paragraphs; with no selection it falls back to the native wrap toggle.
+  const applyCodeBlock = useCallback(() => {
+    if (!editor) return;
+    // Toggling OFF: unwrap the block, restoring each `\n` line as its own
+    // paragraph. Native toggleCodeBlock leaves the newlines as raw `\n` inside a
+    // single paragraph, which HTML serialization collapses into one line.
+    if (editor.isActive('codeBlock')) {
+      const { $from } = editor.state.selection;
+      let depth = $from.depth;
+      while (depth > 0 && $from.node(depth).type.name !== 'codeBlock') depth -= 1;
+      const start = $from.before(depth);
+      const end = $from.after(depth);
+      const paras = $from
+        .node(depth)
+        .textContent.split('\n')
+        .map((line) => ({
+          type: 'paragraph',
+          content: line ? [{ type: 'text', text: line }] : [],
+        }));
+      editor.chain().focus().insertContentAt({ from: start, to: end }, paras).run();
+      return;
+    }
+    if (editor.state.selection.empty) {
+      editor.chain().focus().toggleCodeBlock().run();
+      return;
+    }
+    const { from, to } = editor.state.selection;
+    const text = editor.state.doc.textBetween(from, to, '\n').trim();
+    editor
+      .chain()
+      .focus()
+      .deleteSelection()
+      .insertContent({ type: 'codeBlock', content: text ? [{ type: 'text', text }] : [] })
+      .run();
+  }, [editor]);
+
   if (!editor) return null;
 
   return (
@@ -305,7 +346,7 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
         <ToolBtn active={editor.isActive('code')} onClick={() => editor.chain().focus().toggleCode().run()} title="Inline code">
           <Code size={15} />
         </ToolBtn>
-        <ToolBtn active={editor.isActive('codeBlock')} onClick={() => editor.chain().focus().toggleCodeBlock().run()} title="Code block">
+        <ToolBtn active={editor.isActive('codeBlock')} onClick={applyCodeBlock} title="Code block">
           <Code2 size={15} />
         </ToolBtn>
         <Sep />
