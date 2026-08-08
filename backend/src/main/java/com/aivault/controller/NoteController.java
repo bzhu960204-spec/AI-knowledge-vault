@@ -1,6 +1,7 @@
 package com.aivault.controller;
 
 import com.aivault.dto.ExportRequest;
+import com.aivault.dto.ImportResultDto;
 import com.aivault.dto.MoveNoteRequest;
 import com.aivault.dto.NoteDto;
 import com.aivault.dto.NoteRequest;
@@ -8,7 +9,9 @@ import com.aivault.dto.NoteSummaryDto;
 import com.aivault.dto.QuestionImageDto;
 import com.aivault.dto.ReorderNotesRequest;
 import com.aivault.dto.SearchResultDto;
+import com.aivault.service.ArchiveExportService;
 import com.aivault.service.ExportService;
+import com.aivault.service.ImportService;
 import com.aivault.service.NoteService;
 import com.aivault.service.QuestionImageService;
 import jakarta.validation.Valid;
@@ -37,12 +40,17 @@ public class NoteController {
 
     private final NoteService noteService;
     private final ExportService exportService;
+    private final ArchiveExportService archiveExportService;
+    private final ImportService importService;
     private final QuestionImageService questionImageService;
 
     public NoteController(NoteService noteService, ExportService exportService,
+                         ArchiveExportService archiveExportService, ImportService importService,
                          QuestionImageService questionImageService) {
         this.noteService = noteService;
         this.exportService = exportService;
+        this.archiveExportService = archiveExportService;
+        this.importService = importService;
         this.questionImageService = questionImageService;
     }
 
@@ -126,5 +134,22 @@ public class NoteController {
         return ResponseEntity.ok()
                 .contentType(MediaType.TEXT_HTML)
                 .body(html);
+    }
+
+    @PostMapping(value = "/export/archive", produces = "application/zip")
+    public ResponseEntity<byte[]> exportArchive(@RequestBody ExportRequest request) {
+        byte[] bundle = archiveExportService.exportArchive(request);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("application/zip"))
+                .header("Content-Disposition", "attachment; filename=\"export.aivault\"")
+                .body(bundle);
+    }
+
+    @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ImportResultDto importArchive(
+            @RequestPart("file") MultipartFile file,
+            @RequestParam(required = false) Long folderId
+    ) {
+        return importService.importArchive(file, folderId);
     }
 }

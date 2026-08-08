@@ -3,6 +3,7 @@ import type {
   ExportRequest,
   Folder,
   FolderRequest,
+  ImportResult,
   Note,
   NoteRequest,
   NoteSummary,
@@ -60,6 +61,20 @@ export const notesApi = {
     api
       .post<string>('/notes/export', body, { responseType: 'text' })
       .then((r) => r.data),
+  exportArchive: (body: ExportRequest) =>
+    api
+      .post<Blob>('/notes/export/archive', body, { responseType: 'blob' })
+      .then((r) => r.data),
+  importArchive: (file: File, folderId?: number | null) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api
+      .post<ImportResult>('/notes/import', form, {
+        params: { folderId: folderId ?? undefined },
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      .then((r) => r.data);
+  },
   uploadQuestionImage: (noteId: number, segmentId: number, file: File) => {
     const form = new FormData();
     form.append('file', file);

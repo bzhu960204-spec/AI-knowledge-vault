@@ -95,7 +95,7 @@ export interface FolderNode extends Folder {
   children: FolderNode[];
 }
 
-export type ExportFormat = 'HTML' | 'PDF';
+export type ExportFormat = 'HTML' | 'PDF' | 'ARCHIVE';
 
 export interface ExportRequest {
   noteIds: number[];
@@ -104,4 +104,11 @@ export interface ExportRequest {
   includeQuestion: boolean;
   stripLinks?: boolean;
   title?: string;
+}
+
+/** Summary returned after importing a .aivault bundle. */
+export interface ImportResult {
+  folders: number;
+  notes: number;
+  images: number;
 }

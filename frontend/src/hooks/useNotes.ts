@@ -81,11 +81,28 @@ export function useMoveNote() {
   });
 }
 
+export function useImportArchive() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      file,
+      folderId,
+    }: {
+      file: File;
+      folderId?: number | null;
+    }) => notesApi.importArchive(file, folderId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['notes'] });
+      qc.invalidateQueries({ queryKey: ['folders'] });
+      qc.invalidateQueries({ queryKey: ['tags'] });
+    },
+  });
+}
+
 export function useReorderNotes(params: {
   folderId?: number | null;
   tag?: string;
-}) {
-  const qc = useQueryClient();
+}) {  const qc = useQueryClient();
   const key = ['notes', params];
   return useMutation({
     mutationFn: (orderedIds: number[]) => notesApi.reorder(orderedIds),

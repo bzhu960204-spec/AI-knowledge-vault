@@ -1,11 +1,16 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   SortableContext,
   useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useCreateNote, useNotes, useDeleteNote } from '../hooks/useNotes';
+import {
+  useCreateNote,
+  useNotes,
+  useDeleteNote,
+  useImportArchive,
+} from '../hooks/useNotes';
 import { useSelectionStore } from '../store/useSelectionStore';
 import type { ListDensity } from '../store/useSelectionStore';
 import type { NoteSummary } from '../api/types';
@@ -31,6 +36,9 @@ export function NoteList({
   const setDensity = useSelectionStore((s) => s.setDensity);
 
   const [exportOpen, setExportOpen] = useState(false);
+  const [importMessage, setImportMessage] = useState<string | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const importArchive = useImportArchive();
 
   const showSubfolderToggle = !activeTag;
 
@@ -40,6 +48,27 @@ export function NoteList({
     includeSubfolders: showSubfolderToggle && includeSubfolders,
   });
   const createNote = useCreateNote();
+
+  function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setImportMessage(null);
+    importArchive.mutate(
+      { file, folderId: activeTag ? null : selectedFolderId },
+      {
+        onSuccess: (r) =>
+          setImportMessage(
+            `Imported ${r.notes} note${r.notes === 1 ? '' : 's'}, ` +
+              `${r.folders} folder${r.folders === 1 ? '' : 's'}.`,
+          ),
+        onError: (err) =>
+          setImportMessage(
+            err instanceof Error ? err.message : 'Import failed.',
+          ),
+      },
+    );
+  }
 
   function newNote() {
     createNote.mutate(
@@ -143,6 +172,24 @@ export function NoteList({
           {!exportMode && (
             <button
               type="button"
+              onClick={() => importInputRef.current?.click()}
+              disabled={importArchive.isPending}
+              title="Import a .aivault bundle into this folder"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-sm text-muted transition hover:bg-surface-2 hover:text-accent disabled:opacity-50"
+            >
+              ⭱
+            </button>
+          )}
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".aivault,application/zip"
+            onChange={handleImportFile}
+            className="hidden"
+          />
+          {!exportMode && (
+            <button
+              type="button"
               onClick={newNote}
               title="Create a new note"
               className="flex h-7 w-7 items-center justify-center rounded-md text-base font-medium leading-none text-accent-contrast transition hover:opacity-90"
@@ -163,6 +210,23 @@ export function NoteList({
           )}
         </div>
       </div>
+
+      {(importArchive.isPending || importMessage) && (
+        <div className="flex items-center justify-between gap-2 border-b border-border bg-surface-2 px-4 py-2">
+          <span className="text-xs text-muted">
+            {importArchive.isPending ? 'Importing…' : importMessage}
+          </span>
+          {!importArchive.isPending && (
+            <button
+              type="button"
+              onClick={() => setImportMessage(null)}
+              className="rounded-md px-2 py-0.5 text-xs text-muted transition hover:bg-surface hover:text-text"
+            >
+              Dismiss
+            </button>
+          )}
+        </div>
+      )}
 
       {exportMode && (
         <div className="flex items-center justify-between border-b border-border bg-surface-2 px-4 py-2">

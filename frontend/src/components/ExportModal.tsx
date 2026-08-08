@@ -28,6 +28,17 @@ function triggerHtmlDownload(html: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function triggerPrint(html: string, docTitle: string) {
   const iframe = document.createElement('iframe');
   iframe.style.position = 'fixed';
@@ -114,6 +125,20 @@ export function ExportModal({
     setBusy(true);
     setError(null);
     try {
+      if (format === 'ARCHIVE') {
+        const blob = await notesApi.exportArchive({
+          noteIds,
+          folderId: noteIds.length === 0 ? (folderId ?? null) : undefined,
+          includeSubfolders: noteIds.length === 0 ? includeSubfolders : undefined,
+          includeQuestion,
+          stripLinks,
+          title,
+        });
+        triggerBlobDownload(blob, `${sanitizeFilename(title)}.aivault`);
+        onClose();
+        onExported?.();
+        return;
+      }
       const html = await notesApi.exportHtml({
         noteIds,
         folderId: noteIds.length === 0 ? (folderId ?? null) : undefined,
@@ -166,7 +191,7 @@ export function ExportModal({
               Format
             </span>
             <div className="flex gap-2">
-              {(['PDF', 'HTML'] as const).map((f) => (
+              {(['PDF', 'HTML', 'ARCHIVE'] as const).map((f) => (
                 <button
                   key={f}
                   type="button"
@@ -180,7 +205,7 @@ export function ExportModal({
                     format === f ? { background: 'var(--accent)' } : undefined
                   }
                 >
-                  {f}
+                  {f === 'ARCHIVE' ? 'Vault' : f}
                 </button>
               ))}
             </div>
@@ -189,27 +214,36 @@ export function ExportModal({
                 Opens the print dialog — choose “Save as PDF”.
               </p>
             )}
+            {format === 'ARCHIVE' && (
+              <p className="mt-1.5 text-[11px] text-muted">
+                A re-importable .aivault bundle for sharing with another vault.
+              </p>
+            )}
           </div>
 
-          <label className="flex cursor-pointer items-center gap-2">
-            <input
-              type="checkbox"
-              checked={includeQuestion}
-              onChange={(e) => setIncludeQuestion(e.target.checked)}
-              className="h-4 w-4 accent-[var(--accent)]"
-            />
-            <span className="text-sm text-text">Include the question</span>
-          </label>
+          {format !== 'ARCHIVE' && (
+            <>
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={includeQuestion}
+                  onChange={(e) => setIncludeQuestion(e.target.checked)}
+                  className="h-4 w-4 accent-[var(--accent)]"
+                />
+                <span className="text-sm text-text">Include the question</span>
+              </label>
 
-          <label className="flex cursor-pointer items-center gap-2">
-            <input
-              type="checkbox"
-              checked={stripLinks}
-              onChange={(e) => setStripLinks(e.target.checked)}
-              className="h-4 w-4 accent-[var(--accent)]"
-            />
-            <span className="text-sm text-text">Remove reference links</span>
-          </label>
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={stripLinks}
+                  onChange={(e) => setStripLinks(e.target.checked)}
+                  className="h-4 w-4 accent-[var(--accent)]"
+                />
+                <span className="text-sm text-text">Remove reference links</span>
+              </label>
+            </>
+          )}
 
           {error && <p className="text-xs text-red-500">{error}</p>}
         </div>
